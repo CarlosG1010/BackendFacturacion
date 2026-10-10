@@ -14,7 +14,9 @@ import system.solutions.com.api_sunat.dto.ComprobanteRequestDTO;
 import system.solutions.com.api_sunat.entity.Comprobante;
 import system.solutions.com.api_sunat.security.AuthenticatedUser;
 import system.solutions.com.api_sunat.service.ComprobanteService;
+import system.solutions.com.api_sunat.service.ComprobantePdfService;
 import system.solutions.com.api_sunat.sunat.SunatDocumentStorage;
+import system.solutions.com.api_sunat.pdf.PrintFormat;
 
 import java.util.UUID;
 
@@ -24,6 +26,7 @@ import java.util.UUID;
 public class ComprobanteController {
 
     private final ComprobanteService comprobanteService;
+    private final ComprobantePdfService comprobantePdfService;
     private final SunatDocumentStorage documentStorage;
 
     // RF-TE-016 / RF-TE-017 / RF-TE-018 / RF-TE-019 / RF-TE-026 / RF-TE-027 / RF-TE-030 / RF-TE-031
@@ -53,5 +56,20 @@ public class ComprobanteController {
                 .contentType(MediaType.parseMediaType("application/zip"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .body(documentStorage.cargarCdr(comprobante));
+    }
+
+    @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    @PreAuthorize("hasAnyRole('ADMIN_EMPRESA', 'VENDEDOR', 'CONTADOR')")
+    public ResponseEntity<byte[]> descargarPdf(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "A4") PrintFormat formato) {
+        byte[] pdf = comprobantePdfService.generar(id, formato);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .contentLength(pdf.length)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename=\"comprobante-" + id + "-" + formato.name() + ".pdf\"")
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .body(pdf);
     }
 }

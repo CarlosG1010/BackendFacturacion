@@ -47,4 +47,7 @@ public class Tenant extends AuditableEntity {
 
     @Column(name = "certificado_digital_path", length = 500)
     private String certificadoDigitalPath;
+
+    @Column(name = "logo_path", length = 500)
+    private String logoPath;
 }

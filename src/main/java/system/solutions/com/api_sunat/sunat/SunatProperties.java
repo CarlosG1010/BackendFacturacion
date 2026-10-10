@@ -18,6 +18,7 @@ public class SunatProperties {
     private String betaEndpoint = "https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService";
     private String produccionEndpoint = "https://e-factura.sunat.gob.pe/ol-ti-itcpfegem/billService";
     private Path certificateRoot = Path.of("secrets", "certificates");
+    private Path logoRoot = Path.of("data", "logos");
     private Path documentRoot = Path.of("data", "sunat");
     private Path schemaDirectory = Path.of("schemas", "sunat");
     private int connectTimeoutSeconds = 10;
