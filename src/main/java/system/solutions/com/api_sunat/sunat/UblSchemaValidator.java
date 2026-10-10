@@ -22,6 +22,8 @@ public class UblSchemaValidator {
             case "01", "03" -> "UBL-Invoice-2.1.xsd";
             case "07" -> "UBL-CreditNote-2.1.xsd";
             case "08" -> "UBL-DebitNote-2.1.xsd";
+            case "RESUMEN" -> "UBL-2.0-SummaryDocuments-2.0.xsd";
+            case "BAJA" -> "UBL-2.0-VoidedDocuments-2.0.xsd";
             default -> throw new SunatIntegrationException("No existe XSD UBL configurado para este tipo de comprobante.");
         };
         Path schemaPath = properties.getSchemaDirectory().resolve(xsdName).normalize();

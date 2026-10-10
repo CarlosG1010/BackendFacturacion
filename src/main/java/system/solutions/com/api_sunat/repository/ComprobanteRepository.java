@@ -25,7 +25,34 @@ public interface ComprobanteRepository extends JpaRepository<Comprobante, UUID>{
     int cambiarEstadoSiCoincide(@Param("id") UUID id, @Param("expectedState") String expectedState,
                                 @Param("newState") String newState);
 
+    @Modifying
+    @Query("UPDATE Comprobante c SET c.estadoSunat = 'PROCESANDO' WHERE c.id = :id " +
+            "AND c.estadoSunat = 'PENDIENTE_ENVIO' AND c.tipoComprobante <> '03'")
+    int claimIndividual(@Param("id") UUID id);
+
     List<Comprobante> findTop20ByEstadoSunatOrderByFechaEmisionAsc(String estadoSunat);
+
+    @Query("SELECT c FROM Comprobante c WHERE c.estadoSunat = 'PENDIENTE_ENVIO' " +
+            "AND c.tipoComprobante <> '03' ORDER BY c.fechaEmision ASC")
+    List<Comprobante> findTop20PendingIndividual();
+
+    List<Comprobante> findByFechaEmisionGreaterThanEqualAndFechaEmisionLessThanAndTipoComprobanteAndEstadoSunat(
+            LocalDateTime inicio, LocalDateTime fin, String tipoComprobante, String estadoSunat);
+
+    List<Comprobante> findByIdIn(List<UUID> ids);
+
+    @EntityGraph(attributePaths = {"cliente", "detalles"})
+    List<Comprobante> findWithClientByIdIn(List<UUID> ids);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Comprobante c WHERE c.id IN :ids")
+    List<Comprobante> lockByIds(@Param("ids") List<UUID> ids);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Comprobante c WHERE c.fechaEmision >= :inicio AND c.fechaEmision < :fin " +
+            "AND c.tipoComprobante = '03' AND c.estadoSunat = 'PENDIENTE_ENVIO' AND c.loteResumenId IS NULL")
+    List<Comprobante> lockBoletasPendientesResumen(@Param("inicio") LocalDateTime inicio,
+                                                   @Param("fin") LocalDateTime fin);
 
     // Soporta RF-TE-020 y RF-TE-028: Consultar comprobantes con filtros avanzados por rango de fechas y tipo
     List<Comprobante> findByFechaEmisionBetweenAndTipoComprobante(LocalDateTime inicio, LocalDateTime fin, String tipoComprobante);

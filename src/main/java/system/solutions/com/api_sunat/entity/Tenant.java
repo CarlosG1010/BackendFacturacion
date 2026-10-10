@@ -45,6 +45,12 @@ public class Tenant extends AuditableEntity {
     @Column(name = "estado", length = 20, nullable = false)
     private String estado; // ACTIVO, INACTIVO
 
+    @Column(name = "estado_sunat", length = 50)
+    private String estadoSunat;
+
+    @Column(name = "condicion_sunat", length = 50)
+    private String condicionSunat;
+
     @Column(name = "certificado_digital_path", length = 500)
     private String certificadoDigitalPath;
 

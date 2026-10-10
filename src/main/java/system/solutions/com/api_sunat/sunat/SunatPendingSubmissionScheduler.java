@@ -36,7 +36,7 @@ public class SunatPendingSubmissionScheduler {
         tenantRepository.findAll().forEach(tenant -> {
             TenantContext.setCurrentTenant(tenant.getId());
             try {
-                comprobanteRepository.findTop20ByEstadoSunatOrderByFechaEmisionAsc("PENDIENTE_ENVIO")
+                comprobanteRepository.findTop20PendingIndividual()
                         .forEach(comprobante -> executor.execute(() -> {
                             TenantContext.setCurrentTenant(tenant.getId());
                             try {

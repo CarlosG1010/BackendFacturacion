@@ -61,11 +61,26 @@ public class Comprobante {
     @Column(name = "monto_gravado", precision = 14, scale = 2, nullable = false)
     private BigDecimal montoGravado;
 
+    @Column(name = "monto_exonerado", precision = 14, scale = 2, nullable = false)
+    private BigDecimal montoExonerado = BigDecimal.ZERO;
+
+    @Column(name = "monto_inafecto", precision = 14, scale = 2, nullable = false)
+    private BigDecimal montoInafecto = BigDecimal.ZERO;
+
+    @Column(name = "monto_gratuito", precision = 14, scale = 2, nullable = false)
+    private BigDecimal montoGratuito = BigDecimal.ZERO;
+
     @Column(name = "monto_igv", precision = 14, scale = 2, nullable = false)
     private BigDecimal montoIgv;
 
     @Column(name = "monto_total", precision = 14, scale = 2, nullable = false)
     private BigDecimal montoTotal;
+
+    @Column(name = "moneda", length = 3, nullable = false)
+    private String moneda = "PEN";
+
+    @Column(name = "tipo_cambio", precision = 14, scale = 6)
+    private BigDecimal tipoCambio;
 
     @Column(name = "estado_sunat", length = 30, nullable = false)
     private String estadoSunat;
@@ -96,6 +111,15 @@ public class Comprobante {
 
     @Column(name = "fecha_envio_sunat")
     private LocalDateTime fechaEnvioSunat;
+
+    @Column(name = "lote_resumen_id")
+    private UUID loteResumenId;
+
+    @Column(name = "lote_baja_id")
+    private UUID loteBajaId;
+
+    @Column(name = "estado_anulacion", length = 30)
+    private String estadoAnulacion;
 
     @CreatedDate
     @Column(name = "created_at", updatable = false, nullable = false)

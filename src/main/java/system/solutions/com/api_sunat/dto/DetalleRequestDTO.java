@@ -8,4 +8,6 @@ import java.util.UUID;
 public class DetalleRequestDTO {
     private UUID productoId;
     private BigDecimal cantidad;
+    private String tipoAfectacionIgv = "10";
+    private boolean gratuito;
 }

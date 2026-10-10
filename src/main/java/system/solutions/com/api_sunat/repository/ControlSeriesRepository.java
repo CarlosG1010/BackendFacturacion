@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import jakarta.persistence.LockModeType;
 import system.solutions.com.api_sunat.entity.ControlSeries;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -18,5 +19,9 @@ public interface ControlSeriesRepository extends JpaRepository<ControlSeries, UU
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM ControlSeries c WHERE c.tipoComprobante = :tipo AND c.serie = :serie")
     Optional<ControlSeries> findByTipoComprobanteAndSerieForUpdate(@Param("tipo") String tipoComprobante, @Param("serie") String serie);
+
+    boolean existsByTipoComprobanteAndSerie(String tipoComprobante, String serie);
+
+    List<ControlSeries> findAllByOrderByTipoComprobanteAscSerieAsc();
 
 }

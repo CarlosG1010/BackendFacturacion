@@ -23,6 +23,7 @@ public class SunatProperties {
     private Path schemaDirectory = Path.of("schemas", "sunat");
     private int connectTimeoutSeconds = 10;
     private int responseTimeoutSeconds = 45;
+    private int maxBajaDias = 7;
     private Map<UUID, TenantCredentials> tenants = new HashMap<>();
 
     public String endpoint() {

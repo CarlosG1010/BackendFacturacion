@@ -24,6 +24,10 @@ public class SpanishAmountWords {
     };
 
     public String toSoles(BigDecimal amount) {
+        return toCurrency(amount, "PEN");
+    }
+
+    public String toCurrency(BigDecimal amount, String currencyCode) {
         if (amount == null || amount.signum() < 0) {
             throw new IllegalArgumentException("El monto debe ser un valor positivo.");
         }
@@ -39,7 +43,11 @@ public class SpanishAmountWords {
         if (soles > 999_999_999_999L) {
             throw new IllegalArgumentException("El monto excede el rango soportado para conversión a letras.");
         }
-        String currency = soles == 1 ? "SOL" : "SOLES";
+        String currency = switch (currencyCode == null ? "" : currencyCode.toUpperCase(Locale.ROOT)) {
+            case "PEN" -> soles == 1 ? "SOL" : "SOLES";
+            case "USD" -> soles == 1 ? "DÓLAR" : "DÓLARES";
+            default -> throw new IllegalArgumentException("Moneda no soportada para conversión a letras.");
+        };
         return "SON: " + apocopate(numberToWords(soles))
                 + " CON " + String.format(Locale.ROOT, "%02d", cents) + "/100 " + currency;
     }

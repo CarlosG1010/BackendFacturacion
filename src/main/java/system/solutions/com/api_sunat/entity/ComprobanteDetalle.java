@@ -44,4 +44,10 @@ public class ComprobanteDetalle {
     @Column(name = "total", precision = 14, scale = 2, nullable = false)
     private BigDecimal total;
 
+    @Column(name = "tipo_afectacion_igv", length = 2, nullable = false)
+    private String tipoAfectacionIgv = "10";
+
+    @Column(name = "es_gratuito", nullable = false)
+    private boolean gratuito;
+
 }

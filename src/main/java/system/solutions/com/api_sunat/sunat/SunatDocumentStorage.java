@@ -10,6 +10,7 @@ import system.solutions.com.api_sunat.entity.Tenant;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -82,6 +83,50 @@ public class SunatDocumentStorage {
             throw new SunatIntegrationException("No se encontró el archivo CDR del comprobante.");
         }
         return new FileSystemResource(cdrPath);
+    }
+
+    public String guardarBatchXml(UUID tenantId, String fileName, byte[] xml) {
+        return writeBatchFile(tenantId, fileName + ".xml", xml);
+    }
+
+    public String guardarBatchCdr(UUID tenantId, String fileName, byte[] cdr) {
+        return writeBatchFile(tenantId, fileName + "-CDR.zip", cdr);
+    }
+
+    public String guardarBatchZip(UUID tenantId, String fileName, byte[] zip) {
+        return writeBatchFile(tenantId, fileName + ".zip", zip);
+    }
+
+    public byte[] zip(String fileName, byte[] content) {
+        try {
+            ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
+            try (ZipOutputStream zip = new ZipOutputStream(zipBytes)) {
+                zip.putNextEntry(new ZipEntry(fileName));
+                zip.write(content);
+                zip.closeEntry();
+            }
+            return zipBytes.toByteArray();
+        } catch (Exception exception) {
+            throw new SunatIntegrationException("No se pudo comprimir el lote SUNAT.", exception);
+        }
+    }
+
+    private String writeBatchFile(UUID tenantId, String fileName, byte[] content) {
+        try {
+            Path root = properties.getDocumentRoot().toAbsolutePath().normalize();
+            Path directory = root.resolve(tenantId.toString()).normalize();
+            Path path = directory.resolve(fileName).normalize();
+            if (!path.startsWith(directory)) {
+                throw new SunatIntegrationException("Nombre de archivo no válido para el lote SUNAT.");
+            }
+            Files.createDirectories(directory);
+            Files.write(path, content);
+            return path.toString();
+        } catch (SunatIntegrationException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new SunatIntegrationException("No se pudo guardar el archivo del lote SUNAT.", exception);
+        }
     }
 
     public record StoredFiles(String xmlPath, String zipPath, byte[] zipBytes) {

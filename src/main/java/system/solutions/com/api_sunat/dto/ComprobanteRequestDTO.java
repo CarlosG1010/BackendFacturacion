@@ -15,5 +15,7 @@ public class ComprobanteRequestDTO {
     private List<DetalleRequestDTO> detalles;
     private String motivoNotaCodigo;
     private String motivoNota;
+    private String moneda = "PEN";
+    private java.math.BigDecimal tipoCambio;
 
 }

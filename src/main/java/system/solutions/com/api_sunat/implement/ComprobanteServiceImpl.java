@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -61,6 +62,9 @@ public class ComprobanteServiceImpl implements ComprobanteService {
         comprobante.setEstadoSunat("PENDIENTE_ENVIO");
         comprobante.setMotivoNotaCodigo(request.getMotivoNotaCodigo());
         comprobante.setMotivoNota(request.getMotivoNota());
+        String currency = request.getMoneda() == null ? "PEN" : request.getMoneda().toUpperCase(Locale.ROOT);
+        comprobante.setMoneda(currency);
+        comprobante.setTipoCambio(request.getTipoCambio());
 
         Map<UUID, ComprobanteDetalle> sourceDetailsByProduct = new HashMap<>();
         Map<UUID, BigDecimal> sourceQuantitiesByProduct = new HashMap<>();
@@ -124,6 +128,9 @@ public class ComprobanteServiceImpl implements ComprobanteService {
         BigDecimal totalComprobante = BigDecimal.ZERO;
         BigDecimal totalGravado = BigDecimal.ZERO;
         BigDecimal totalIgv = BigDecimal.ZERO;
+        BigDecimal totalExonerado = BigDecimal.ZERO;
+        BigDecimal totalInafecto = BigDecimal.ZERO;
+        BigDecimal totalGratuito = BigDecimal.ZERO;
         Map<UUID, BigDecimal> noteQuantities = new HashMap<>();
 
         for (DetalleRequestDTO detalleDto : request.getDetalles()) {
@@ -135,9 +142,15 @@ public class ComprobanteServiceImpl implements ComprobanteService {
                 throw new IllegalArgumentException("Uno de los productos seleccionados no existe.");
             }
 
-            BigDecimal precioUnitario = sourceDetail == null
+            BigDecimal precioEnSoles = sourceDetail == null
                     ? producto.getPrecioUnitario()
                     : sourceDetail.getPrecioUnitario();
+            if (sourceDetail != null && !"PEN".equals(comprobante.getMoneda())) {
+                throw new IllegalArgumentException("Las notas en moneda extranjera requieren conservar y convertir la moneda del comprobante origen.");
+            }
+            BigDecimal precioUnitario = "USD".equals(comprobante.getMoneda())
+                    ? precioEnSoles.divide(request.getTipoCambio(), 4, RoundingMode.HALF_UP)
+                    : precioEnSoles;
             if (sourceDetail != null) {
                 BigDecimal cumulativeQuantity = noteQuantities.merge(
                         producto.getId(), detalleDto.getCantidad(), BigDecimal::add);
@@ -145,11 +158,20 @@ public class ComprobanteServiceImpl implements ComprobanteService {
                     throw new IllegalArgumentException("La cantidad de la nota supera el detalle del comprobante de origen.");
                 }
             }
-            BigDecimal totalItem = precioUnitario.multiply(detalleDto.getCantidad()).setScale(2, RoundingMode.HALF_UP);
-
-            BigDecimal divisor = BigDecimal.ONE.add(PORCENTAJE_IGV);
-            BigDecimal subtotalItem = totalItem.divide(divisor, 2, RoundingMode.HALF_UP);
-            BigDecimal igvItem = totalItem.subtract(subtotalItem);
+            String taxCode = detalleDto.getTipoAfectacionIgv() == null ? "10" : detalleDto.getTipoAfectacionIgv();
+            boolean free = detalleDto.isGratuito();
+            BigDecimal referenceTotal = precioUnitario.multiply(detalleDto.getCantidad()).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal totalItem = free ? BigDecimal.ZERO : referenceTotal;
+            BigDecimal subtotalItem;
+            BigDecimal igvItem = BigDecimal.ZERO;
+            if ("10".equals(taxCode) || "11".equals(taxCode)) {
+                subtotalItem = referenceTotal.divide(BigDecimal.ONE.add(PORCENTAJE_IGV), 2, RoundingMode.HALF_UP);
+                if (!free) {
+                    igvItem = totalItem.subtract(subtotalItem);
+                }
+            } else {
+                subtotalItem = referenceTotal;
+            }
 
             ComprobanteDetalle detalle = new ComprobanteDetalle();
             detalle.setComprobante(comprobante);
@@ -160,14 +182,29 @@ public class ComprobanteServiceImpl implements ComprobanteService {
 
             detalle.setIgv(igvItem);
             detalle.setTotal(totalItem);
+            detalle.setTipoAfectacionIgv(free ? freeAffectationCode(taxCode) : taxCode);
+            detalle.setGratuito(free);
             comprobante.addDetalle(detalle);
 
             totalComprobante = totalComprobante.add(totalItem);
-            totalGravado = totalGravado.add(subtotalItem);
+            if (free) {
+                totalGratuito = totalGratuito.add(referenceTotal);
+            } else if ("10".equals(taxCode)) {
+                totalGravado = totalGravado.add(subtotalItem);
+            } else if ("20".equals(taxCode)) {
+                totalExonerado = totalExonerado.add(subtotalItem);
+            } else if ("30".equals(taxCode)) {
+                totalInafecto = totalInafecto.add(subtotalItem);
+            } else {
+                throw new IllegalArgumentException("Tipo de afectación IGV no soportado.");
+            }
             totalIgv = totalIgv.add(igvItem);
         }
 
         comprobante.setMontoGravado(totalGravado);
+        comprobante.setMontoExonerado(totalExonerado);
+        comprobante.setMontoInafecto(totalInafecto);
+        comprobante.setMontoGratuito(totalGratuito);
         comprobante.setMontoIgv(totalIgv);
         comprobante.setMontoTotal(totalComprobante);
 
@@ -207,6 +244,23 @@ public class ComprobanteServiceImpl implements ComprobanteService {
             if (detail.getProductoId() == null || detail.getCantidad() == null || detail.getCantidad().signum() <= 0) {
                 throw new IllegalArgumentException("Cada detalle requiere un producto y una cantidad mayor que cero.");
             }
+            String affectation = detail.getTipoAfectacionIgv() == null ? "10" : detail.getTipoAfectacionIgv();
+            if (!Set.of("10", "20", "30").contains(affectation)) {
+                throw new IllegalArgumentException("Afectación IGV válida: 10 gravado, 20 exonerado, 30 inafecto.");
+            }
+            if (detail.isGratuito() && !"10".equals(affectation)) {
+                throw new IllegalArgumentException("En esta versión las operaciones gratuitas se soportan para bienes gravados.");
+            }
+        }
+        String currency = request.getMoneda() == null ? "PEN" : request.getMoneda().toUpperCase(Locale.ROOT);
+        if (!Set.of("PEN", "USD").contains(currency)) {
+            throw new IllegalArgumentException("La moneda debe ser PEN o USD.");
+        }
+        if ("PEN".equals(currency) && request.getTipoCambio() != null) {
+            throw new IllegalArgumentException("No se debe indicar tipo de cambio para comprobantes PEN.");
+        }
+        if ("USD".equals(currency) && (request.getTipoCambio() == null || request.getTipoCambio().signum() <= 0)) {
+            throw new IllegalArgumentException("El tipo de cambio PEN por USD es obligatorio y debe ser positivo.");
         }
         boolean note = "07".equals(request.getTipoComprobante()) || "08".equals(request.getTipoComprobante());
         if (note != (request.getComprobanteOrigenId() != null)) {
@@ -216,5 +270,14 @@ public class ComprobanteServiceImpl implements ComprobanteService {
                 || request.getMotivoNota() == null || request.getMotivoNota().isBlank())) {
             throw new IllegalArgumentException("Las notas requieren código y descripción del motivo.");
         }
+    }
+
+    private String freeAffectationCode(String taxableCode) {
+        return switch (taxableCode) {
+            case "10" -> "11";
+            case "20" -> "21";
+            case "30" -> "31";
+            default -> throw new IllegalArgumentException("Tipo de afectación gratuita no soportado.");
+        };
     }
 }

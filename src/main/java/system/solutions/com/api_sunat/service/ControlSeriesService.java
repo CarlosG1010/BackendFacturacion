@@ -1,5 +1,9 @@
 package system.solutions.com.api_sunat.service;
 
+import system.solutions.com.api_sunat.entity.ControlSeries;
+
+import java.util.List;
+
 public interface ControlSeriesService {
 
     /**
@@ -10,5 +14,9 @@ public interface ControlSeriesService {
      * @return El número correlativo disponible para usar.
      */
     Long obtenerSiguienteCorrelativo(String tipoComprobante, String serie);
+
+    ControlSeries configurar(String tipoComprobante, String serie, long ultimoNumero);
+
+    List<ControlSeries> listar();
 
 }

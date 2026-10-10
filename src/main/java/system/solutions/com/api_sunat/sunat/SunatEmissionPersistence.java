@@ -21,7 +21,7 @@ public class SunatEmissionPersistence {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean claim(UUID comprobanteId) {
-        return comprobanteRepository.cambiarEstadoSiCoincide(comprobanteId, "PENDIENTE_ENVIO", "PROCESANDO") == 1;
+        return comprobanteRepository.claimIndividual(comprobanteId) == 1;
     }
 
     @Transactional(readOnly = true)

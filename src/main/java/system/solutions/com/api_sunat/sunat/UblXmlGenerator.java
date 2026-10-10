@@ -63,7 +63,16 @@ public class UblXmlGenerator {
                 typeCode.setAttribute("listAgencyName", "PE:SUNAT");
                 typeCode.setAttribute("listName", "Tipo de Documento");
             }
-            basic(document, root, "cbc:DocumentCurrencyCode", "PEN");
+            basic(document, root, "cbc:DocumentCurrencyCode", comprobante.getMoneda());
+            if ("USD".equals(comprobante.getMoneda())) {
+                Element exchange = child(document, root, CAC, "cac:PricingExchangeRate");
+                basic(document, exchange, "cbc:SourceCurrencyCode", "PEN");
+                basic(document, exchange, "cbc:SourceCurrencyBaseRate", "1.000000");
+                basic(document, exchange, "cbc:TargetCurrencyCode", "USD");
+                basic(document, exchange, "cbc:TargetCurrencyBaseRate", "1.000000");
+                basic(document, exchange, "cbc:CalculationRate", comprobante.getTipoCambio().setScale(6, RoundingMode.HALF_UP).toPlainString());
+                basic(document, exchange, "cbc:Date", comprobante.getFechaEmision().toLocalDate().toString());
+            }
             if ("07".equals(comprobante.getTipoComprobante()) || "08".equals(comprobante.getTipoComprobante())) {
                 addNoteReferences(document, root, comprobante);
             }
@@ -207,32 +216,50 @@ public class UblXmlGenerator {
         companyId.setAttribute("schemeName", "SUNAT:Identificador de Documento de Identidad");
         companyId.setAttribute("schemeAgencyName", "PE:SUNAT");
         Element scheme = child(document, taxScheme, CAC, "cac:TaxScheme");
-        basic(document, scheme, "cbc:ID", "1000");
+        taxSchemeId(document, scheme, "1000");
         basic(document, scheme, "cbc:Name", "IGV");
         basic(document, scheme, "cbc:TaxTypeCode", "VAT");
     }
 
     private void addTaxTotal(Document document, Element root, Comprobante comprobante) {
         Element total = child(document, root, CAC, "cac:TaxTotal");
-        amount(document, total, "cbc:TaxAmount", comprobante.getMontoIgv());
+        amount(document, total, "cbc:TaxAmount", comprobante.getMontoIgv(), comprobante.getMoneda());
+        addInvoiceTaxSubtotal(document, total, "10", comprobante.getMontoGravado(), comprobante.getMontoIgv(), comprobante.getMoneda());
+        addInvoiceTaxSubtotal(document, total, "20", comprobante.getMontoExonerado(), BigDecimal.ZERO, comprobante.getMoneda());
+        addInvoiceTaxSubtotal(document, total, "30", comprobante.getMontoInafecto(), BigDecimal.ZERO, comprobante.getMoneda());
+        addInvoiceTaxSubtotal(document, total, "11", comprobante.getMontoGratuito(), BigDecimal.ZERO, comprobante.getMoneda());
+    }
+
+    private void addInvoiceTaxSubtotal(Document document, Element total, String affectation,
+                                       BigDecimal base, BigDecimal tax, String currency) {
+        if (base == null || base.signum() == 0) {
+            return;
+        }
+        String schemeId = taxSchemeCode(affectation);
         Element subtotal = child(document, total, CAC, "cac:TaxSubtotal");
-        amount(document, subtotal, "cbc:TaxableAmount", comprobante.getMontoGravado());
-        amount(document, subtotal, "cbc:TaxAmount", comprobante.getMontoIgv());
+        amount(document, subtotal, "cbc:TaxableAmount", base, currency);
+        amount(document, subtotal, "cbc:TaxAmount", tax, currency);
         Element category = child(document, subtotal, CAC, "cac:TaxCategory");
         taxCategoryId(document, category);
-        basic(document, category, "cbc:Percent", IGV_RATE.toPlainString());
-        taxAffectationCode(document, category);
+        basic(document, category, "cbc:Percent", ("10".equals(affectation) || "11".equals(affectation))
+                ? IGV_RATE.toPlainString() : "0");
+        taxAffectationCode(document, category, affectation);
         Element scheme = child(document, category, CAC, "cac:TaxScheme");
-        taxSchemeId(document, scheme);
-        basic(document, scheme, "cbc:Name", "IGV");
-        basic(document, scheme, "cbc:TaxTypeCode", "VAT");
+        taxSchemeId(document, scheme, schemeId);
+        basic(document, scheme, "cbc:Name", "1000".equals(schemeId) ? "IGV" : "EXP");
+        basic(document, scheme, "cbc:TaxTypeCode", "1000".equals(schemeId) ? "VAT" : "FRE");
     }
 
     private void addMonetaryTotal(Document document, Element root, Comprobante comprobante) {
         Element total = child(document, root, CAC, "cac:LegalMonetaryTotal");
-        amount(document, total, "cbc:LineExtensionAmount", comprobante.getMontoGravado());
-        amount(document, total, "cbc:TaxInclusiveAmount", comprobante.getMontoTotal());
-        amount(document, total, "cbc:PayableAmount", comprobante.getMontoTotal());
+        BigDecimal taxable = comprobante.getMontoGravado().add(comprobante.getMontoExonerado())
+                .add(comprobante.getMontoInafecto());
+        amount(document, total, "cbc:LineExtensionAmount", taxable, comprobante.getMoneda());
+        if (comprobante.getMontoGratuito().signum() > 0) {
+            amount(document, total, "cbc:AllowanceTotalAmount", comprobante.getMontoGratuito(), comprobante.getMoneda());
+        }
+        amount(document, total, "cbc:TaxInclusiveAmount", comprobante.getMontoTotal(), comprobante.getMoneda());
+        amount(document, total, "cbc:PayableAmount", comprobante.getMontoTotal(), comprobante.getMoneda());
     }
 
     private void addLines(Document document, Element root, Comprobante comprobante) {
@@ -250,29 +277,34 @@ public class UblXmlGenerator {
                     : "08".equals(comprobante.getTipoComprobante()) ? "cbc:DebitedQuantity" : "cbc:InvoicedQuantity";
             Element quantity = basic(document, line, quantityName, detalle.getCantidad().toPlainString());
             quantity.setAttribute("unitCode", producto.getUnidadMedida());
-            amount(document, line, "cbc:LineExtensionAmount", detalle.getSubtotal());
+            amount(document, line, "cbc:LineExtensionAmount", detalle.isGratuito() ? BigDecimal.ZERO : detalle.getSubtotal(),
+                    comprobante.getMoneda());
 
             Element pricing = child(document, line, CAC, "cac:PricingReference");
             Element alternativePrice = child(document, pricing, CAC, "cac:AlternativeConditionPrice");
-            BigDecimal grossUnitPrice = detalle.getTotal().divide(detalle.getCantidad(), 4, RoundingMode.HALF_UP);
-            amount(document, alternativePrice, "cbc:PriceAmount", grossUnitPrice);
-            Element priceType = basic(document, alternativePrice, "cbc:PriceTypeCode", "01");
+            BigDecimal grossUnitPrice = (detalle.isGratuito() ? detalle.getSubtotal() : detalle.getTotal())
+                    .divide(detalle.getCantidad(), 4, RoundingMode.HALF_UP);
+            amount(document, alternativePrice, "cbc:PriceAmount", grossUnitPrice, comprobante.getMoneda());
+            Element priceType = basic(document, alternativePrice, "cbc:PriceTypeCode", detalle.isGratuito() ? "02" : "01");
             priceType.setAttribute("listName", "Tipo de Precio");
             priceType.setAttribute("listAgencyName", "PE:SUNAT");
 
             Element taxTotal = child(document, line, CAC, "cac:TaxTotal");
-            amount(document, taxTotal, "cbc:TaxAmount", detalle.getIgv());
+            amount(document, taxTotal, "cbc:TaxAmount", detalle.getIgv(), comprobante.getMoneda());
             Element subtotal = child(document, taxTotal, CAC, "cac:TaxSubtotal");
-            amount(document, subtotal, "cbc:TaxableAmount", detalle.getSubtotal());
-            amount(document, subtotal, "cbc:TaxAmount", detalle.getIgv());
+            amount(document, subtotal, "cbc:TaxableAmount", detalle.getSubtotal(), comprobante.getMoneda());
+            amount(document, subtotal, "cbc:TaxAmount", detalle.getIgv(), comprobante.getMoneda());
             Element category = child(document, subtotal, CAC, "cac:TaxCategory");
             taxCategoryId(document, category);
-            basic(document, category, "cbc:Percent", IGV_RATE.toPlainString());
-            taxAffectationCode(document, category);
+            String baseAffectation = baseAffectation(detalle.getTipoAfectacionIgv());
+            basic(document, category, "cbc:Percent", ("10".equals(baseAffectation))
+                    ? IGV_RATE.toPlainString() : "0");
+            taxAffectationCode(document, category, detalle.getTipoAfectacionIgv());
             Element taxScheme = child(document, category, CAC, "cac:TaxScheme");
-            taxSchemeId(document, taxScheme);
-            basic(document, taxScheme, "cbc:Name", "IGV");
-            basic(document, taxScheme, "cbc:TaxTypeCode", "VAT");
+            String schemeId = taxSchemeCode(detalle.getTipoAfectacionIgv());
+            taxSchemeId(document, taxScheme, schemeId);
+            basic(document, taxScheme, "cbc:Name", "1000".equals(schemeId) ? "IGV" : "EXP");
+            basic(document, taxScheme, "cbc:TaxTypeCode", "1000".equals(schemeId) ? "VAT" : "FRE");
 
             Element item = child(document, line, CAC, "cac:Item");
             basic(document, item, "cbc:Description", producto.getDescripcion());
@@ -280,7 +312,7 @@ public class UblXmlGenerator {
             basic(document, sellersId, "cbc:ID", producto.getCodigoInterno());
             Element price = child(document, line, CAC, "cac:Price");
             amount(document, price, "cbc:PriceAmount",
-                    detalle.getSubtotal().divide(detalle.getCantidad(), 4, RoundingMode.HALF_UP));
+                    detalle.getSubtotal().divide(detalle.getCantidad(), 4, RoundingMode.HALF_UP), comprobante.getMoneda());
         }
     }
 
@@ -331,9 +363,25 @@ public class UblXmlGenerator {
         return element;
     }
 
-    private void amount(Document document, Element parent, String qualifiedName, BigDecimal value) {
+    private void amount(Document document, Element parent, String qualifiedName, BigDecimal value, String currency) {
         Element element = basic(document, parent, qualifiedName, value.setScale(2, RoundingMode.HALF_UP).toPlainString());
-        element.setAttribute("currencyID", "PEN");
+        element.setAttribute("currencyID", currency);
+    }
+
+    private String baseAffectation(String code) {
+        return switch (code) {
+            case "11", "21", "31" -> code.substring(0, 1) + "0";
+            default -> code;
+        };
+    }
+
+    private String taxSchemeCode(String code) {
+        return switch (baseAffectation(code)) {
+            case "10" -> "1000";
+            case "20" -> "9997";
+            case "30" -> "9998";
+            default -> throw new SunatIntegrationException("Tipo de afectación IGV no soportado: " + code);
+        };
     }
 
     private void taxCategoryId(Document document, Element category) {
@@ -343,14 +391,14 @@ public class UblXmlGenerator {
         id.setAttribute("schemeAgencyName", "United Nations Economic Commission for Europe");
     }
 
-    private void taxAffectationCode(Document document, Element category) {
-        Element code = basic(document, category, "cbc:TaxExemptionReasonCode", "10");
+    private void taxAffectationCode(Document document, Element category, String affectation) {
+        Element code = basic(document, category, "cbc:TaxExemptionReasonCode", affectation);
         code.setAttribute("listAgencyName", "PE:SUNAT");
         code.setAttribute("listName", "Afectacion del IGV");
     }
 
-    private void taxSchemeId(Document document, Element taxScheme) {
-        Element id = basic(document, taxScheme, "cbc:ID", "1000");
+    private void taxSchemeId(Document document, Element taxScheme, String schemeId) {
+        Element id = basic(document, taxScheme, "cbc:ID", schemeId);
         id.setAttribute("schemeName", "Codigo de tributos");
         id.setAttribute("schemeAgencyName", "PE:SUNAT");
     }

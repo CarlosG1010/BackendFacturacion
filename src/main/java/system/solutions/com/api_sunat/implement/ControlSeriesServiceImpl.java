@@ -7,9 +7,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import system.solutions.com.api_sunat.config.TenantContext;
 import system.solutions.com.api_sunat.entity.ControlSeries;
 import system.solutions.com.api_sunat.repository.ControlSeriesRepository;
 import system.solutions.com.api_sunat.service.ControlSeriesService;
+import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -37,5 +40,35 @@ public class ControlSeriesServiceImpl implements ControlSeriesService {
         controlSeriesRepository.save(control);
 
         return siguienteNumero;
+    }
+
+    @Override
+    @Transactional
+    public ControlSeries configurar(String tipoComprobante, String serie, long ultimoNumero) {
+        if (TenantContext.getCurrentTenant() == null) {
+            throw new IllegalStateException("No hay un tenant autenticado para configurar la serie.");
+        }
+        if (!Set.of("01", "03", "07", "08").contains(tipoComprobante)) {
+            throw new IllegalArgumentException("Tipo de comprobante no soportado para series.");
+        }
+        String prefix = "03".equals(tipoComprobante) ? "B" : "F";
+        if (serie == null || !serie.matches("[A-Z0-9]{4}") || !serie.startsWith(prefix) || ultimoNumero < 0) {
+            throw new IllegalArgumentException("Serie o correlativo inicial no válido.");
+        }
+        if (controlSeriesRepository.existsByTipoComprobanteAndSerie(tipoComprobante, serie)) {
+            throw new IllegalArgumentException("La serie ya está configurada para este tenant.");
+        }
+        ControlSeries control = new ControlSeries();
+        control.setTipoComprobante(tipoComprobante);
+        control.setSerie(serie);
+        control.setUltimoNumero(ultimoNumero);
+        control.setTenantId(TenantContext.getCurrentTenant());
+        return controlSeriesRepository.save(control);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ControlSeries> listar() {
+        return controlSeriesRepository.findAllByOrderByTipoComprobanteAscSerieAsc();
     }
 }

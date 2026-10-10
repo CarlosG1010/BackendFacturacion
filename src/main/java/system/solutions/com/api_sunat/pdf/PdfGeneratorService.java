@@ -99,7 +99,7 @@ public class PdfGeneratorService {
         }
         float widthMm = format == PrintFormat.TICKET_80MM ? 80f : 58f;
         float lineHeightMm = format == PrintFormat.TICKET_80MM ? 11f : 14f;
-        float heightMm = Math.max(170f, 145f + comprobante.getDetalles().size() * lineHeightMm);
+        float heightMm = Math.max(195f, 175f + comprobante.getDetalles().size() * lineHeightMm);
         return new Rectangle(millimetersToPoints(widthMm), millimetersToPoints(heightMm));
     }
 
@@ -128,15 +128,17 @@ public class PdfGeneratorService {
         addRule(document);
         addTicketItems(document, comprobante, format);
         addRule(document);
-        addKeyValue(document, "OP. GRAVADA", money(comprobante.getMontoGravado()));
-        addKeyValue(document, "IGV (18%)", money(comprobante.getMontoIgv()));
-        Paragraph total = new Paragraph("TOTAL " + money(comprobante.getMontoTotal()),
+        addKeyValue(document, "OP. GRAVADA", money(comprobante.getMontoGravado(), comprobante.getMoneda()));
+        addKeyValue(document, "OP. EXONERADA", money(comprobante.getMontoExonerado(), comprobante.getMoneda()));
+        addKeyValue(document, "OP. INAFECTA", money(comprobante.getMontoInafecto(), comprobante.getMoneda()));
+        addKeyValue(document, "IGV", money(comprobante.getMontoIgv(), comprobante.getMoneda()));
+        Paragraph total = new Paragraph("TOTAL " + money(comprobante.getMontoTotal(), comprobante.getMoneda()),
                 font(format == PrintFormat.TICKET_58MM ? 9 : 11, Font.BOLD, INK));
         total.setAlignment(Element.ALIGN_RIGHT);
         total.setSpacingBefore(4);
         total.setSpacingAfter(3);
         document.add(total);
-        addLeft(document, amountWords.toSoles(comprobante.getMontoTotal()), font(7, Font.NORMAL, INK));
+        addLeft(document, amountWords.toCurrency(comprobante.getMontoTotal(), comprobante.getMoneda()), font(7, Font.NORMAL, INK));
         addQr(document, comprobante, tenant, format == PrintFormat.TICKET_80MM ? 100 : 82);
         addLegalFooter(document, comprobante, tenant, format);
     }
@@ -192,7 +194,7 @@ public class PdfGeneratorService {
         addInfoCell(details, "CLIENTE", comprobante.getCliente().getNombreRazonSocial() + "\n"
                 + customerDocument(comprobante.getCliente()) + "\n" + safe(comprobante.getCliente().getDireccion()));
         addInfoCell(details, "FECHA DE EMISIÓN", comprobante.getFechaEmision().format(ISSUE_DATE));
-        addInfoCell(details, "MONEDA", "PEN - SOLES");
+        addInfoCell(details, "MONEDA", comprobante.getMoneda());
         if (comprobante.getComprobanteOrigen() != null) {
             addInfoCell(details, "COMPROBANTE REFERENCIADO",
                     comprobante.getComprobanteOrigen().getSerie() + "-" + comprobante.getComprobanteOrigen().getNumero());
@@ -215,8 +217,8 @@ public class PdfGeneratorService {
             table.addCell(cell(String.valueOf(index++), Element.ALIGN_CENTER, Color.WHITE, 6));
             table.addCell(cell(detail.getProducto().getDescripcion(), Element.ALIGN_LEFT, Color.WHITE, 6));
             table.addCell(cell(detail.getCantidad().stripTrailingZeros().toPlainString(), Element.ALIGN_RIGHT, Color.WHITE, 6));
-            table.addCell(cell(money(detail.getPrecioUnitario()), Element.ALIGN_RIGHT, Color.WHITE, 6));
-            table.addCell(cell(money(detail.getTotal()), Element.ALIGN_RIGHT, Color.WHITE, 6));
+            table.addCell(cell(money(detail.getPrecioUnitario(), comprobante.getMoneda()), Element.ALIGN_RIGHT, Color.WHITE, 6));
+            table.addCell(cell(money(detail.getTotal(), comprobante.getMoneda()), Element.ALIGN_RIGHT, Color.WHITE, 6));
         }
         document.add(table);
     }
@@ -231,9 +233,9 @@ public class PdfGeneratorService {
         for (ComprobanteDetalle detail : comprobante.getDetalles()) {
             table.addCell(cell(detail.getProducto().getDescripcion() + "\n"
                             + detail.getCantidad().stripTrailingZeros().toPlainString() + " x "
-                            + money(detail.getPrecioUnitario()),
+                            + money(detail.getPrecioUnitario(), comprobante.getMoneda()),
                     Element.ALIGN_LEFT, Color.WHITE, format == PrintFormat.TICKET_58MM ? 6 : 7));
-            table.addCell(cell(money(detail.getTotal()), Element.ALIGN_RIGHT, Color.WHITE,
+            table.addCell(cell(money(detail.getTotal(), comprobante.getMoneda()), Element.ALIGN_RIGHT, Color.WHITE,
                     format == PrintFormat.TICKET_58MM ? 6 : 7));
         }
         document.add(table);
@@ -245,12 +247,15 @@ public class PdfGeneratorService {
         totals.setHorizontalAlignment(Element.ALIGN_RIGHT);
         totals.setSpacingBefore(4);
         if (includeSubtotal) {
-            addTotalRow(totals, "OP. GRAVADA", money(comprobante.getMontoGravado()), false);
+            addTotalRow(totals, "OP. GRAVADA", money(comprobante.getMontoGravado(), comprobante.getMoneda()), false);
         }
-        addTotalRow(totals, "IGV (18%)", money(comprobante.getMontoIgv()), false);
-        addTotalRow(totals, "IMPORTE TOTAL", money(comprobante.getMontoTotal()), true);
+        addTotalRow(totals, "OP. EXONERADA", money(comprobante.getMontoExonerado(), comprobante.getMoneda()), false);
+        addTotalRow(totals, "OP. INAFECTA", money(comprobante.getMontoInafecto(), comprobante.getMoneda()), false);
+        addTotalRow(totals, "OP. GRATUITA", money(comprobante.getMontoGratuito(), comprobante.getMoneda()), false);
+        addTotalRow(totals, "IGV", money(comprobante.getMontoIgv(), comprobante.getMoneda()), false);
+        addTotalRow(totals, "IMPORTE TOTAL", money(comprobante.getMontoTotal(), comprobante.getMoneda()), true);
         document.add(totals);
-        Paragraph words = new Paragraph(amountWords.toSoles(comprobante.getMontoTotal()), font(9, Font.BOLD, INK));
+        Paragraph words = new Paragraph(amountWords.toCurrency(comprobante.getMontoTotal(), comprobante.getMoneda()), font(9, Font.BOLD, INK));
         words.setSpacingBefore(8);
         words.setSpacingAfter(7);
         document.add(words);
@@ -300,8 +305,8 @@ public class PdfGeneratorService {
                 comprobante.getTipoComprobante(),
                 comprobante.getSerie(),
                 String.valueOf(comprobante.getNumero()),
-                money(comprobante.getMontoIgv()),
-                money(comprobante.getMontoTotal()),
+                money(comprobante.getMontoIgv(), comprobante.getMoneda()),
+                money(comprobante.getMontoTotal(), comprobante.getMoneda()),
                 comprobante.getFechaEmision().toLocalDate().toString(),
                 customerDocumentCode(cliente),
                 safe(cliente.getNumeroDocumento()),
@@ -432,6 +437,10 @@ public class PdfGeneratorService {
 
     private String money(BigDecimal amount) {
         return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String money(BigDecimal amount, String currency) {
+        return currency + " " + money(amount);
     }
 
     private String safe(String value) {

@@ -27,26 +27,56 @@ public class SunatSoapClient {
     private final SunatProperties properties;
 
     public SunatSoapResponse enviarComprobante(Tenant tenant, String fileName, byte[] zipContent) {
+        Document document = callFileOperation(tenant, "sendBill", fileName, zipContent);
+        String applicationResponse = text(document, "applicationResponse");
+        if (applicationResponse == null || applicationResponse.isBlank()) {
+            throw soapFaultOrUnexpected(document, "SUNAT no devolvió applicationResponse.");
+        }
+        return new SunatSoapResponse(applicationResponse, null, null, null);
+    }
+
+    public String enviarResumen(Tenant tenant, String fileName, byte[] zipContent) {
+        Document document = callFileOperation(tenant, "sendSummary", fileName, zipContent);
+        String ticket = text(document, "ticket");
+        if (ticket == null || ticket.isBlank()) {
+            throw soapFaultOrUnexpected(document, "SUNAT no devolvió el ticket del resumen diario.");
+        }
+        return ticket;
+    }
+
+    public SunatSoapResponse consultarTicket(Tenant tenant, String ticket) {
+        SunatProperties.TenantCredentials credentials = credentials(tenant);
+        String body = """
+                <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe">
+                  <soapenv:Header/>
+                  <soapenv:Body><ser:getStatus><ticket>%s</ticket></ser:getStatus></soapenv:Body>
+                </soapenv:Envelope>
+                """.formatted(xmlEscape(ticket));
+        Document document = parse(post(body, tenant.getRuc() + credentials.getSunatUsername(), credentials.getSunatPassword()));
+        String statusCode = text(document, "statusCode");
+        String content = text(document, "content");
+        if (statusCode == null) {
+            throw soapFaultOrUnexpected(document, "SUNAT no devolvió el estado del ticket.");
+        }
+        return new SunatSoapResponse(content, ticket, statusCode, text(document, "statusMessage"));
+    }
+
+    private Document callFileOperation(Tenant tenant, String operation, String fileName, byte[] zipContent) {
         SunatProperties.TenantCredentials credentials = credentials(tenant);
         String username = tenant.getRuc() + credentials.getSunatUsername();
         String body = """
                 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.sunat.gob.pe">
                   <soapenv:Header/>
                   <soapenv:Body>
-                    <ser:sendBill>
+                    <ser:%s>
                       <fileName>%s</fileName>
                       <contentFile>%s</contentFile>
-                    </ser:sendBill>
+                    </ser:%s>
                   </soapenv:Body>
                 </soapenv:Envelope>
-                """.formatted(xmlEscape(fileName), Base64.getEncoder().encodeToString(zipContent));
+                """.formatted(operation, xmlEscape(fileName), Base64.getEncoder().encodeToString(zipContent), operation);
         byte[] response = post(body, username, credentials.getSunatPassword());
-        Document document = parse(response);
-        String applicationResponse = text(document, "applicationResponse");
-        if (applicationResponse == null || applicationResponse.isBlank()) {
-            throw soapFaultOrUnexpected(document, "SUNAT no devolvió applicationResponse.");
-        }
-        return new SunatSoapResponse(applicationResponse, null, null, null);
+        return parse(response);
     }
 
     private byte[] post(String soapBody, String username, String password) {
