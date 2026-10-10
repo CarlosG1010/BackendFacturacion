@@ -1,0 +1,220 @@
+package system.solutions.com.api_sunat.implement;
+
+import system.solutions.com.api_sunat.dto.ComprobanteRequestDTO;
+import system.solutions.com.api_sunat.dto.DetalleRequestDTO;
+import system.solutions.com.api_sunat.entity.Cliente;
+import system.solutions.com.api_sunat.entity.Comprobante;
+import system.solutions.com.api_sunat.entity.ComprobanteDetalle;
+import system.solutions.com.api_sunat.entity.Producto;
+import system.solutions.com.api_sunat.repository.ClienteRepository;
+import system.solutions.com.api_sunat.repository.ComprobanteRepository;
+import system.solutions.com.api_sunat.repository.ProductoRepository;
+import system.solutions.com.api_sunat.service.ComprobanteService;
+import system.solutions.com.api_sunat.service.ControlSeriesService;
+import system.solutions.com.api_sunat.config.TenantContext;
+import system.solutions.com.api_sunat.sunat.ComprobanteSubmissionEvent;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class ComprobanteServiceImpl implements ComprobanteService {
+
+    private final ComprobanteRepository comprobanteRepository;
+    private final ClienteRepository clienteRepository;
+    private final ProductoRepository productoRepository;
+    private final ControlSeriesService controlSeriesService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    private static final BigDecimal PORCENTAJE_IGV = new BigDecimal("0.18");
+
+    @Override
+    @Transactional
+    public Comprobante emitirComprobante(ComprobanteRequestDTO request) {
+        UUID tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new IllegalStateException("No se puede emitir un comprobante sin tenant autenticado.");
+        }
+        validarSolicitud(request);
+        Cliente cliente = clienteRepository.findById(request.getClienteId())
+                .orElseThrow(() -> new IllegalArgumentException("El cliente seleccionado no existe."));
+        if (!"ACTIVO".equals(cliente.getEstado())) {
+            throw new IllegalArgumentException("El cliente seleccionado está inactivo.");
+        }
+
+        Comprobante comprobante = new Comprobante();
+        comprobante.setTipoComprobante(request.getTipoComprobante());
+        comprobante.setSerie(request.getSerie());
+        comprobante.setCliente(cliente);
+        comprobante.setUsuarioId(request.getUsuarioId());
+        comprobante.setFechaEmision(LocalDateTime.now());
+        comprobante.setEstadoSunat("PENDIENTE_ENVIO");
+        comprobante.setMotivoNotaCodigo(request.getMotivoNotaCodigo());
+        comprobante.setMotivoNota(request.getMotivoNota());
+
+        Map<UUID, ComprobanteDetalle> sourceDetailsByProduct = new HashMap<>();
+        Map<UUID, BigDecimal> sourceQuantitiesByProduct = new HashMap<>();
+        if (request.getComprobanteOrigenId() != null) {
+            Comprobante origen = comprobanteRepository.findWithEmissionDataById(request.getComprobanteOrigenId())
+                    .orElseThrow(() -> new IllegalArgumentException("El comprobante de origen referenciado no existe."));
+            if (!cliente.getId().equals(origen.getCliente().getId())) {
+                throw new IllegalArgumentException("El comprobante de origen debe corresponder al mismo cliente.");
+            }
+            if (!Set.of("01", "03").contains(origen.getTipoComprobante())
+                    || !"ACEPTADO".equals(origen.getEstadoSunat())) {
+                throw new IllegalArgumentException("La nota debe referenciar una factura o boleta aceptada por SUNAT.");
+            }
+            origen.getDetalles().forEach(detail -> {
+                UUID productId = detail.getProducto().getId();
+                ComprobanteDetalle existing = sourceDetailsByProduct.putIfAbsent(productId, detail);
+                if (existing != null && existing.getPrecioUnitario().compareTo(detail.getPrecioUnitario()) != 0) {
+                    throw new IllegalArgumentException("Las líneas repetidas del producto tienen precios distintos y no se pueden consolidar en una nota.");
+                }
+                sourceQuantitiesByProduct.merge(productId, detail.getCantidad(), BigDecimal::add);
+            });
+            comprobante.setComprobanteOrigen(origen);
+        }
+
+        Long numeroCorrelativo = controlSeriesService.obtenerSiguienteCorrelativo(
+                request.getTipoComprobante(),
+                request.getSerie()
+        );
+        comprobante.setNumero(numeroCorrelativo);
+
+        Set<UUID> productIds = new HashSet<>();
+        request.getDetalles().forEach(detail -> productIds.add(detail.getProductoId()));
+        Map<UUID, Producto> productsById = new HashMap<>();
+        productoRepository.findAllById(productIds).forEach(product -> productsById.put(product.getId(), product));
+
+        boolean venta = "01".equals(request.getTipoComprobante()) || "03".equals(request.getTipoComprobante());
+        boolean nota = !venta;
+        for (DetalleRequestDTO detail : request.getDetalles()) {
+            if (nota && !sourceDetailsByProduct.containsKey(detail.getProductoId())) {
+                throw new IllegalArgumentException("El producto de la nota no aparece en el comprobante de origen.");
+            }
+            if (!nota && !productsById.containsKey(detail.getProductoId())) {
+                throw new IllegalArgumentException("Uno de los productos seleccionados no existe.");
+            }
+        }
+        if (venta) {
+            for (DetalleRequestDTO detail : request.getDetalles()) {
+                Producto product = productsById.get(detail.getProductoId());
+                if (product == null) {
+                    throw new IllegalArgumentException("Uno de los productos seleccionados no existe.");
+                }
+                if (!"ACTIVO".equals(product.getEstado())) {
+                    throw new IllegalStateException("El producto '" + product.getDescripcion() + "' no se encuentra activo.");
+                }
+                if (productoRepository.disminuirStock(product.getId(), detail.getCantidad()) == 0) {
+                    throw new IllegalStateException("Stock insuficiente para el producto: " + product.getDescripcion());
+                }
+            }
+        }
+
+        BigDecimal totalComprobante = BigDecimal.ZERO;
+        BigDecimal totalGravado = BigDecimal.ZERO;
+        BigDecimal totalIgv = BigDecimal.ZERO;
+        Map<UUID, BigDecimal> noteQuantities = new HashMap<>();
+
+        for (DetalleRequestDTO detalleDto : request.getDetalles()) {
+            ComprobanteDetalle sourceDetail = sourceDetailsByProduct.get(detalleDto.getProductoId());
+            Producto producto = sourceDetail == null
+                    ? productsById.get(detalleDto.getProductoId())
+                    : sourceDetail.getProducto();
+            if (producto == null) {
+                throw new IllegalArgumentException("Uno de los productos seleccionados no existe.");
+            }
+
+            BigDecimal precioUnitario = sourceDetail == null
+                    ? producto.getPrecioUnitario()
+                    : sourceDetail.getPrecioUnitario();
+            if (sourceDetail != null) {
+                BigDecimal cumulativeQuantity = noteQuantities.merge(
+                        producto.getId(), detalleDto.getCantidad(), BigDecimal::add);
+                if (cumulativeQuantity.compareTo(sourceQuantitiesByProduct.get(producto.getId())) > 0) {
+                    throw new IllegalArgumentException("La cantidad de la nota supera el detalle del comprobante de origen.");
+                }
+            }
+            BigDecimal totalItem = precioUnitario.multiply(detalleDto.getCantidad()).setScale(2, RoundingMode.HALF_UP);
+
+            BigDecimal divisor = BigDecimal.ONE.add(PORCENTAJE_IGV);
+            BigDecimal subtotalItem = totalItem.divide(divisor, 2, RoundingMode.HALF_UP);
+            BigDecimal igvItem = totalItem.subtract(subtotalItem);
+
+            ComprobanteDetalle detalle = new ComprobanteDetalle();
+            detalle.setComprobante(comprobante);
+            detalle.setProducto(producto);
+            detalle.setCantidad(detalleDto.getCantidad());
+            detalle.setPrecioUnitario(precioUnitario);
+            detalle.setSubtotal(subtotalItem);
+
+            detalle.setIgv(igvItem);
+            detalle.setTotal(totalItem);
+            comprobante.addDetalle(detalle);
+
+            totalComprobante = totalComprobante.add(totalItem);
+            totalGravado = totalGravado.add(subtotalItem);
+            totalIgv = totalIgv.add(igvItem);
+        }
+
+        comprobante.setMontoGravado(totalGravado);
+        comprobante.setMontoIgv(totalIgv);
+        comprobante.setMontoTotal(totalComprobante);
+
+        Comprobante persisted = comprobanteRepository.save(comprobante);
+        eventPublisher.publishEvent(new ComprobanteSubmissionEvent(persisted.getId(), tenantId));
+        return persisted;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Comprobante buscarPorId(UUID id) {
+        return comprobanteRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("El comprobante solicitado no existe."));
+    }
+
+    private void validarSolicitud(ComprobanteRequestDTO request) {
+        if (request == null) {
+            throw new IllegalArgumentException("La solicitud del comprobante es obligatoria.");
+        }
+        if (request.getTipoComprobante() == null
+                || !Set.of("01", "03", "07", "08").contains(request.getTipoComprobante())) {
+            throw new IllegalArgumentException("Tipo de comprobante no soportado.");
+        }
+        String expectedPrefix = "03".equals(request.getTipoComprobante()) ? "B" : "F";
+        if (request.getSerie() == null || !request.getSerie().matches("[A-Z0-9]{4}")
+                || !request.getSerie().startsWith(expectedPrefix)) {
+            throw new IllegalArgumentException("La serie debe tener cuatro caracteres y prefijo "
+                    + expectedPrefix + " para este tipo de comprobante.");
+        }
+        if (request.getClienteId() == null || request.getDetalles() == null || request.getDetalles().isEmpty()) {
+            throw new IllegalArgumentException("Cliente y al menos un detalle son obligatorios.");
+        }
+        if (request.getDetalles().size() > 100) {
+            throw new IllegalArgumentException("Un comprobante no puede tener más de 100 líneas.");
+        }
+        for (DetalleRequestDTO detail : request.getDetalles()) {
+            if (detail.getProductoId() == null || detail.getCantidad() == null || detail.getCantidad().signum() <= 0) {
+                throw new IllegalArgumentException("Cada detalle requiere un producto y una cantidad mayor que cero.");
+            }
+        }
+        boolean note = "07".equals(request.getTipoComprobante()) || "08".equals(request.getTipoComprobante());
+        if (note != (request.getComprobanteOrigenId() != null)) {
+            throw new IllegalArgumentException("Las notas requieren comprobante de origen y los demás tipos no lo admiten.");
+        }
+        if (note && (request.getMotivoNotaCodigo() == null || request.getMotivoNotaCodigo().isBlank()
+                || request.getMotivoNota() == null || request.getMotivoNota().isBlank())) {
+            throw new IllegalArgumentException("Las notas requieren código y descripción del motivo.");
+        }
+    }
+}

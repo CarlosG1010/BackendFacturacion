@@ -1,0 +1,53 @@
+package system.solutions.com.api_sunat.config;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.stereotype.Component;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.servlet.HandlerInterceptor;
+import system.solutions.com.api_sunat.security.AuthenticatedUser;
+
+import java.util.UUID;
+
+@Component
+public class TenantInterceptor implements HandlerInterceptor {
+
+    private static final String TENANT_HEADER = "X-Tenant-ID";
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        String tenantHeader = request.getHeader(TENANT_HEADER);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser user)) {
+            return true;
+        }
+
+        UUID authenticatedTenantId = user.tenantId();
+        if (tenantHeader != null && !tenantHeader.isBlank()) {
+            UUID requestedTenantId;
+            try {
+                requestedTenantId = UUID.fromString(tenantHeader);
+            } catch (IllegalArgumentException exception) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "El formato de X-Tenant-ID no es un UUID válido.");
+                return false;
+            }
+
+            if (!requestedTenantId.equals(authenticatedTenantId)) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "El tenant solicitado no corresponde al usuario autenticado.");
+                return false;
+            }
+        }
+
+        if (authenticatedTenantId != null) {
+            TenantContext.setCurrentTenant(authenticatedTenantId);
+        }
+        return true;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        TenantContext.clear();
+    }
+}
