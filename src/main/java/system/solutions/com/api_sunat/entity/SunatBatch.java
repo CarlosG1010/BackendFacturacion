@@ -1,10 +1,8 @@
 package system.solutions.com.api_sunat.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.persistence.*;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -18,6 +16,10 @@ import java.util.UUID;
 @Entity
 @Table(name = "sunat_lotes", indexes = {
         @Index(name = "idx_sunat_lotes_tenant_estado", columnList = "tenant_id, estado, creado_en")
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uk_sunat_lotes_tenant_id", columnNames = {"tenant_id", "id"}),
+        @UniqueConstraint(name = "uk_sunat_lotes_correlativo",
+                columnNames = {"tenant_id", "tipo_lote", "fecha_documentos", "correlativo"})
 })
 @Getter
 @Setter
@@ -31,8 +33,15 @@ public class SunatBatch {
     private UUID id = UUID.randomUUID();
 
     @TenantId
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     @Column(name = "tenant_id", nullable = false, updatable = false)
     private UUID tenantId;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", referencedColumnName = "id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "fk_sunat_lotes_tenant"))
+    private Tenant tenant;
 
     @Column(name = "tipo_lote", length = 20, nullable = false)
     private String tipoLote;
@@ -42,9 +51,6 @@ public class SunatBatch {
 
     @Column(name = "correlativo", nullable = false)
     private Integer correlativo;
-
-    @Column(name = "documentos_json", columnDefinition = "nvarchar(max)", nullable = false)
-    private String documentosJson;
 
     @Column(name = "nombre_archivo", length = 120, nullable = false)
     private String nombreArchivo;

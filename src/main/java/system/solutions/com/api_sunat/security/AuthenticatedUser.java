@@ -50,4 +50,10 @@ public record AuthenticatedUser(
     public boolean isEnabled() {
         return active;
     }
+
+    @Override
+    public String toString() {
+        return "AuthenticatedUser[id=" + id + ", tenantId=" + tenantId + ", email=" + email
+                + ", role=" + role + ", active=" + active + "]";
+    }
 }

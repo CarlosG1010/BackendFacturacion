@@ -1,6 +1,7 @@
 package system.solutions.com.api_sunat.sunat;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import java.nio.file.Path;
@@ -9,7 +10,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-@Data
+@Getter
+@Setter
 @Component
 @ConfigurationProperties(prefix = "sunat")
 public class SunatProperties {
@@ -34,7 +36,8 @@ public class SunatProperties {
         };
     }
 
-    @Data
+    @Getter
+    @Setter
     public static class TenantCredentials {
         private String sunatUsername;
         private String sunatPassword;

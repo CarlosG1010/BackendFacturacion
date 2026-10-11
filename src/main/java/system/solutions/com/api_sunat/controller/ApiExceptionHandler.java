@@ -2,6 +2,8 @@ package system.solutions.com.api_sunat.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import system.solutions.com.api_sunat.sunat.SunatIntegrationException;
@@ -24,6 +26,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(SunatIntegrationException.class)
     public ResponseEntity<ApiError> sunatUnavailable(SunatIntegrationException exception) {
         return error(HttpStatus.BAD_GATEWAY, exception.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> dataConflict(DataIntegrityViolationException exception) {
+        return error(HttpStatus.CONFLICT, "La operación entra en conflicto con datos existentes.");
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> invalidRequestBody(HttpMessageNotReadableException exception) {
+        return error(HttpStatus.BAD_REQUEST, "El cuerpo de la solicitud no tiene un formato válido.");
     }
 
     private ResponseEntity<ApiError> error(HttpStatus status, String message) {

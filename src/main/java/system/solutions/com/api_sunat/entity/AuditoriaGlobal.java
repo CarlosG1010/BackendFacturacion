@@ -1,6 +1,7 @@
 package system.solutions.com.api_sunat.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -30,6 +31,12 @@ public class AuditoriaGlobal {
 
     @Column(name = "tenant_id")
     private UUID tenantId; // Empresa afectada (opcional)
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tenant_id", referencedColumnName = "id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "fk_auditoria_global_tenant"))
+    private Tenant tenant;
 
     @Column(name = "fecha_hora", nullable = false)
     private LocalDateTime fechaHora;

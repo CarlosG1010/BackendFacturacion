@@ -44,13 +44,19 @@ public interface ComprobanteRepository extends JpaRepository<Comprobante, UUID>{
     @EntityGraph(attributePaths = {"cliente", "detalles"})
     List<Comprobante> findWithClientByIdIn(List<UUID> ids);
 
+    @EntityGraph(attributePaths = {"cliente", "detalles"})
+    List<Comprobante> findWithClientByLoteResumen_IdOrderBySerieAscNumeroAsc(UUID batchId);
+
+    @EntityGraph(attributePaths = {"cliente", "detalles"})
+    List<Comprobante> findWithClientByLoteBaja_IdOrderBySerieAscNumeroAsc(UUID batchId);
+
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM Comprobante c WHERE c.id IN :ids")
     List<Comprobante> lockByIds(@Param("ids") List<UUID> ids);
 
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM Comprobante c WHERE c.fechaEmision >= :inicio AND c.fechaEmision < :fin " +
-            "AND c.tipoComprobante = '03' AND c.estadoSunat = 'PENDIENTE_ENVIO' AND c.loteResumenId IS NULL")
+            "AND c.tipoComprobante = '03' AND c.estadoSunat = 'PENDIENTE_ENVIO' AND c.loteResumen IS NULL")
     List<Comprobante> lockBoletasPendientesResumen(@Param("inicio") LocalDateTime inicio,
                                                    @Param("fin") LocalDateTime fin);
 

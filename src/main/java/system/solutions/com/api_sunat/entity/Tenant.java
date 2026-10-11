@@ -1,6 +1,7 @@
 package system.solutions.com.api_sunat.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 import java.util.UUID;
 
@@ -13,7 +14,7 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = false)
-@ToString
+@ToString(exclude = {"certificadoDigitalPath", "logoPath"})
 
 public class Tenant extends AuditableEntity {
     @Id
@@ -52,8 +53,13 @@ public class Tenant extends AuditableEntity {
     private String condicionSunat;
 
     @Column(name = "certificado_digital_path", length = 500)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String certificadoDigitalPath;
 
     @Column(name = "logo_path", length = 500)
     private String logoPath;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
 }

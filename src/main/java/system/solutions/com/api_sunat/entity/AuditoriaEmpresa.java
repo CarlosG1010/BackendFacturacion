@@ -1,6 +1,8 @@
 package system.solutions.com.api_sunat.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 import org.hibernate.annotations.TenantId;
 import java.time.LocalDateTime;
@@ -24,8 +26,15 @@ public class AuditoriaEmpresa {
     private UUID id = UUID.randomUUID();
 
     @TenantId
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     @Column(name = "tenant_id", nullable = false, updatable = false)
     private UUID tenantId;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", referencedColumnName = "id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "fk_auditoria_empresa_tenant"))
+    private Tenant tenant;
 
     @Column(name = "usuario_id", nullable = false)
     private UUID usuarioId;

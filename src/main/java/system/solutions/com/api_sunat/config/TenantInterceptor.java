@@ -9,6 +9,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import system.solutions.com.api_sunat.security.AuthenticatedUser;
 
 import java.util.UUID;
+import java.util.Collections;
+import java.util.Enumeration;
 
 @Component
 public class TenantInterceptor implements HandlerInterceptor {
@@ -17,6 +19,12 @@ public class TenantInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        TenantContext.clear();
+        Enumeration<String> tenantHeaders = request.getHeaders(TENANT_HEADER);
+        if (tenantHeaders != null && Collections.list(tenantHeaders).size() > 1) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Solo se permite un encabezado X-Tenant-ID.");
+            return false;
+        }
         String tenantHeader = request.getHeader(TENANT_HEADER);
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
@@ -28,6 +36,9 @@ public class TenantInterceptor implements HandlerInterceptor {
         if (tenantHeader != null && !tenantHeader.isBlank()) {
             UUID requestedTenantId;
             try {
+                if (!tenantHeader.matches("(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+                    throw new IllegalArgumentException("UUID no canónico.");
+                }
                 requestedTenantId = UUID.fromString(tenantHeader);
             } catch (IllegalArgumentException exception) {
                 response.sendError(HttpServletResponse.SC_BAD_REQUEST, "El formato de X-Tenant-ID no es un UUID válido.");

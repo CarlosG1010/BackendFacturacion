@@ -12,6 +12,7 @@ import system.solutions.com.api_sunat.repository.ProductoRepository;
 import system.solutions.com.api_sunat.service.ComprobanteService;
 import system.solutions.com.api_sunat.service.ControlSeriesService;
 import system.solutions.com.api_sunat.config.TenantContext;
+import system.solutions.com.api_sunat.util.RequestInput;
 import system.solutions.com.api_sunat.sunat.ComprobanteSubmissionEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -57,6 +58,7 @@ public class ComprobanteServiceImpl implements ComprobanteService {
         comprobante.setTipoComprobante(request.getTipoComprobante());
         comprobante.setSerie(request.getSerie());
         comprobante.setCliente(cliente);
+        comprobante.setClienteId(cliente.getId());
         comprobante.setUsuarioId(request.getUsuarioId());
         comprobante.setFechaEmision(LocalDateTime.now());
         comprobante.setEstadoSunat("PENDIENTE_ENVIO");
@@ -174,8 +176,11 @@ public class ComprobanteServiceImpl implements ComprobanteService {
             }
 
             ComprobanteDetalle detalle = new ComprobanteDetalle();
+            detalle.setTenantId(tenantId);
             detalle.setComprobante(comprobante);
+            detalle.setComprobanteId(comprobante.getId());
             detalle.setProducto(producto);
+            detalle.setProductoId(producto.getId());
             detalle.setCantidad(detalleDto.getCantidad());
             detalle.setPrecioUnitario(precioUnitario);
             detalle.setSubtotal(subtotalItem);
@@ -241,7 +246,9 @@ public class ComprobanteServiceImpl implements ComprobanteService {
             throw new IllegalArgumentException("Un comprobante no puede tener más de 100 líneas.");
         }
         for (DetalleRequestDTO detail : request.getDetalles()) {
-            if (detail.getProductoId() == null || detail.getCantidad() == null || detail.getCantidad().signum() <= 0) {
+            if (detail == null || detail.getProductoId() == null || detail.getCantidad() == null
+                    || detail.getCantidad().signum() <= 0 || detail.getCantidad().precision() > 12
+                    || detail.getCantidad().scale() > 4) {
                 throw new IllegalArgumentException("Cada detalle requiere un producto y una cantidad mayor que cero.");
             }
             String affectation = detail.getTipoAfectacionIgv() == null ? "10" : detail.getTipoAfectacionIgv();
@@ -259,17 +266,25 @@ public class ComprobanteServiceImpl implements ComprobanteService {
         if ("PEN".equals(currency) && request.getTipoCambio() != null) {
             throw new IllegalArgumentException("No se debe indicar tipo de cambio para comprobantes PEN.");
         }
-        if ("USD".equals(currency) && (request.getTipoCambio() == null || request.getTipoCambio().signum() <= 0)) {
-            throw new IllegalArgumentException("El tipo de cambio PEN por USD es obligatorio y debe ser positivo.");
+        if ("USD".equals(currency) && (request.getTipoCambio() == null || request.getTipoCambio().signum() <= 0
+                || request.getTipoCambio().precision() > 14 || request.getTipoCambio().scale() > 4)) {
+            throw new IllegalArgumentException("El tipo de cambio PEN por USD es obligatorio, positivo y admite hasta 4 decimales.");
         }
         boolean note = "07".equals(request.getTipoComprobante()) || "08".equals(request.getTipoComprobante());
         if (note != (request.getComprobanteOrigenId() != null)) {
             throw new IllegalArgumentException("Las notas requieren comprobante de origen y los demás tipos no lo admiten.");
         }
-        if (note && (request.getMotivoNotaCodigo() == null || request.getMotivoNotaCodigo().isBlank()
-                || request.getMotivoNota() == null || request.getMotivoNota().isBlank())) {
-            throw new IllegalArgumentException("Las notas requieren código y descripción del motivo.");
+        if (note) {
+            String reasonCode = RequestInput.requiredText(request.getMotivoNotaCodigo(), "motivoNotaCodigo", 2);
+            if (!reasonCode.matches("\\d{2}")) {
+                throw new IllegalArgumentException("El código de motivo de la nota debe tener dos dígitos.");
+            }
+            request.setMotivoNotaCodigo(reasonCode);
+            request.setMotivoNota(RequestInput.requiredText(request.getMotivoNota(), "motivoNota", 250));
+        } else if (request.getMotivoNotaCodigo() != null || request.getMotivoNota() != null) {
+            throw new IllegalArgumentException("El motivo solo se permite en notas de crédito o débito.");
         }
+        request.setSerie(RequestInput.requiredText(request.getSerie(), "serie", 4));
     }
 
     private String freeAffectationCode(String taxableCode) {

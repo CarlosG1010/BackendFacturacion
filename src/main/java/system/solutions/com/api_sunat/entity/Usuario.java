@@ -2,6 +2,7 @@ package system.solutions.com.api_sunat.entity;
 
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.*;
 import java.util.UUID;
 
@@ -9,12 +10,14 @@ import java.util.UUID;
 @Table(name = "usuarios", indexes = {
         @Index(name = "idx_usuarios_email", columnList = "email"),
         @Index(name = "idx_usuarios_tenant", columnList = "tenant_id")
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uk_usuarios_tenant_id", columnNames = {"tenant_id", "id"})
 })
 @Getter
 @Setter
 @NoArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = false)
-@ToString(exclude = "tenant")
+@ToString(exclude = {"tenant", "passwordHash"})
 
 public class Usuario extends AuditableEntity {
 
@@ -25,6 +28,7 @@ public class Usuario extends AuditableEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tenant_id", foreignKey = @ForeignKey(name = "fk_usuarios_tenant"))
+    @JsonIgnore
     private Tenant tenant; // NULL para administradores globales y operadores de sistemas
 
     @Column(name = "email", length = 100, unique = true, nullable = false)

@@ -33,6 +33,10 @@ public class ControlSeriesServiceImpl implements ControlSeriesService {
                 ));
 
         // Incrementamos el contador de forma aislada
+        if (control.getUltimoNumero() == null || control.getUltimoNumero() < 0
+                || control.getUltimoNumero() == Long.MAX_VALUE) {
+            throw new IllegalStateException("El correlativo de la serie alcanzó su límite permitido.");
+        }
         Long siguienteNumero = control.getUltimoNumero() + 1;
         control.setUltimoNumero(siguienteNumero);
 
@@ -45,14 +49,16 @@ public class ControlSeriesServiceImpl implements ControlSeriesService {
     @Override
     @Transactional
     public ControlSeries configurar(String tipoComprobante, String serie, long ultimoNumero) {
-        if (TenantContext.getCurrentTenant() == null) {
+        var tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
             throw new IllegalStateException("No hay un tenant autenticado para configurar la serie.");
         }
-        if (!Set.of("01", "03", "07", "08").contains(tipoComprobante)) {
+        if (tipoComprobante == null || !Set.of("01", "03", "07", "08").contains(tipoComprobante)) {
             throw new IllegalArgumentException("Tipo de comprobante no soportado para series.");
         }
         String prefix = "03".equals(tipoComprobante) ? "B" : "F";
-        if (serie == null || !serie.matches("[A-Z0-9]{4}") || !serie.startsWith(prefix) || ultimoNumero < 0) {
+        if (serie == null || !serie.matches("[A-Z0-9]{4}") || !serie.startsWith(prefix)
+                || ultimoNumero < 0 || ultimoNumero == Long.MAX_VALUE) {
             throw new IllegalArgumentException("Serie o correlativo inicial no válido.");
         }
         if (controlSeriesRepository.existsByTipoComprobanteAndSerie(tipoComprobante, serie)) {
@@ -62,7 +68,7 @@ public class ControlSeriesServiceImpl implements ControlSeriesService {
         control.setTipoComprobante(tipoComprobante);
         control.setSerie(serie);
         control.setUltimoNumero(ultimoNumero);
-        control.setTenantId(TenantContext.getCurrentTenant());
+        control.setTenantId(tenantId);
         return controlSeriesRepository.save(control);
     }
 

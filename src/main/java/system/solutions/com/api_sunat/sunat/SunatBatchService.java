@@ -10,6 +10,7 @@ import system.solutions.com.api_sunat.entity.SunatBatch;
 import system.solutions.com.api_sunat.repository.ComprobanteRepository;
 import system.solutions.com.api_sunat.repository.SunatBatchRepository;
 import system.solutions.com.api_sunat.repository.TenantRepository;
+import system.solutions.com.api_sunat.util.RequestInput;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -37,9 +38,9 @@ public class SunatBatchService {
         if (boletas.isEmpty()) {
             throw new IllegalArgumentException("No hay boletas aceptadas pendientes de resumen para la fecha indicada.");
         }
-        SunatBatch batch = crearBatch("RESUMEN", fecha, boletas);
-        boletas.forEach(comprobante -> comprobante.setLoteResumenId(batch.getId()));
-        return SunatBatchResponseDTO.from(batchRepository.save(batch));
+        SunatBatch batch = batchRepository.save(crearBatch("RESUMEN", fecha));
+        boletas.forEach(comprobante -> comprobante.setLoteResumen(batch));
+        return SunatBatchResponseDTO.from(batch);
     }
 
     @Transactional
@@ -48,9 +49,10 @@ public class SunatBatchService {
         if (ids == null || ids.isEmpty() || ids.size() > 500 || new HashSet<>(ids).size() != ids.size()) {
             throw new IllegalArgumentException("La solicitud debe incluir entre 1 y 500 comprobantes únicos.");
         }
-        if (motivo == null || motivo.isBlank() || motivo.length() > 500) {
-            throw new IllegalArgumentException("El motivo de baja es obligatorio y admite hasta 500 caracteres.");
+        if (ids.contains(null)) {
+            throw new IllegalArgumentException("La solicitud contiene un identificador de comprobante nulo.");
         }
+        motivo = RequestInput.requiredText(motivo, "motivo", 500);
         List<Comprobante> documents = comprobanteRepository.lockByIds(ids);
         if (documents.size() != ids.size()) {
             throw new IllegalArgumentException("Uno o más comprobantes no existen en la empresa autenticada.");
@@ -71,17 +73,18 @@ public class SunatBatchService {
             } else if (!documentDate.equals(comprobante.getFechaEmision().toLocalDate())) {
                 throw new IllegalArgumentException("Una comunicación de baja solo puede agrupar comprobantes de una misma fecha.");
             }
-            if (comprobante.getLoteBajaId() != null || "ACEPTADA".equals(comprobante.getEstadoAnulacion())) {
+            if (comprobante.getLoteBaja() != null || "ACEPTADA".equals(comprobante.getEstadoAnulacion())) {
                 throw new IllegalArgumentException("El comprobante ya tiene una comunicación de baja asociada.");
             }
         }
-        SunatBatch batch = crearBatch("BAJA", documentDate, documents);
+        SunatBatch batch = crearBatch("BAJA", documentDate);
         for (Comprobante comprobante : documents) {
-            comprobante.setLoteBajaId(batch.getId());
+            comprobante.setLoteBaja(batch);
             comprobante.setEstadoAnulacion("PENDIENTE_ENVIO");
         }
         batch.setMensajeRespuesta(motivo);
-        return SunatBatchResponseDTO.from(batchRepository.save(batch));
+        batchRepository.save(batch);
+        return SunatBatchResponseDTO.from(batch);
     }
 
     @Transactional(readOnly = true)
@@ -92,7 +95,7 @@ public class SunatBatchService {
         return SunatBatchResponseDTO.from(batch);
     }
 
-    private SunatBatch crearBatch(String tipo, LocalDate fecha, List<Comprobante> documents) {
+    private SunatBatch crearBatch(String tipo, LocalDate fecha) {
         UUID tenantId = TenantContext.getCurrentTenant();
         tenantRepository.findByIdForUpdate(tenantId)
                 .orElseThrow(() -> new IllegalStateException("No se encontró la empresa autenticada."));
@@ -100,8 +103,6 @@ public class SunatBatchService {
         batch.setTipoLote(tipo);
         batch.setFechaDocumentos(fecha);
         batch.setCorrelativo(batchRepository.maxCorrelativo(tipo, fecha) + 1);
-        batch.setDocumentosJson(documents.stream().map(comprobante -> "\"" + comprobante.getId() + "\"")
-                .collect(java.util.stream.Collectors.joining(",", "[", "]")));
         batch.setNombreArchivo(tipo);
         batch.setEstado("PENDIENTE_ENVIO");
         batch.setCreadoEn(LocalDateTime.now());

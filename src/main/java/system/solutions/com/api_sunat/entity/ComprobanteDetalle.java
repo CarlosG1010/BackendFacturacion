@@ -1,8 +1,11 @@
 package system.solutions.com.api_sunat.entity;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.TenantId;
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -20,14 +23,37 @@ public class ComprobanteDetalle {
     @EqualsAndHashCode.Include
     private UUID id = UUID.randomUUID();
 
+    @TenantId
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "tenant_id", nullable = false, updatable = false)
+    private UUID tenantId;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", referencedColumnName = "id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "fk_comprobantes_detalle_tenant"))
+    private Tenant tenant;
+
     @JsonBackReference
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "comprobante_id", nullable = false, foreignKey = @ForeignKey(name = "fk_detalles_comprobante"))
+    @JoinColumns(value = {
+            @JoinColumn(name = "tenant_id", referencedColumnName = "tenant_id", nullable = false, insertable = false, updatable = false),
+            @JoinColumn(name = "comprobante_id", referencedColumnName = "id", nullable = false, insertable = false, updatable = false)
+    }, foreignKey = @ForeignKey(name = "fk_detalles_comprobante_tenant"))
     private Comprobante comprobante;
 
+    @Column(name = "comprobante_id", nullable = false)
+    private UUID comprobanteId;
+
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "producto_id", nullable = false, foreignKey = @ForeignKey(name = "fk_detalles_producto"))
+    @JoinColumns(value = {
+            @JoinColumn(name = "tenant_id", referencedColumnName = "tenant_id", nullable = false, insertable = false, updatable = false),
+            @JoinColumn(name = "producto_id", referencedColumnName = "id", nullable = false, insertable = false, updatable = false)
+    }, foreignKey = @ForeignKey(name = "fk_detalles_producto_tenant"))
     private Producto producto;
+
+    @Column(name = "producto_id", nullable = false)
+    private UUID productoId;
 
     @Column(name = "cantidad", precision = 12, scale = 4, nullable = false)
     private BigDecimal cantidad;

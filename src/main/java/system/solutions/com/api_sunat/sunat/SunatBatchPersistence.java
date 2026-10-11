@@ -32,20 +32,13 @@ public class SunatBatchPersistence {
     public BatchData load(UUID batchId) {
         SunatBatch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new SunatIntegrationException("No se encontró el lote SUNAT."));
-        try {
-            List<UUID> ids = ids(batch.getDocumentosJson());
-            List<Comprobante> documents = comprobanteRepository.findWithClientByIdIn(ids);
-            if (documents.size() != ids.size()) {
-                throw new SunatIntegrationException("El lote contiene comprobantes no disponibles en su tenant.");
-            }
-            Tenant tenant = tenantRepository.findById(batch.getTenantId())
-                    .orElseThrow(() -> new SunatIntegrationException("No se encontró el tenant del lote."));
-            return new BatchData(batch, documents, tenant);
-        } catch (SunatIntegrationException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new SunatIntegrationException("No se pudieron cargar las referencias del lote SUNAT.", exception);
+        List<Comprobante> documents = documents(batch);
+        if (documents.isEmpty()) {
+            throw new SunatIntegrationException("El lote no tiene comprobantes asociados.");
         }
+        Tenant tenant = tenantRepository.findById(batch.getTenantId())
+                .orElseThrow(() -> new SunatIntegrationException("No se encontró el tenant del lote."));
+        return new BatchData(batch, documents, tenant);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -105,25 +98,11 @@ public class SunatBatchPersistence {
     }
 
     private List<Comprobante> documents(SunatBatch batch) {
-        try {
-            List<UUID> ids = ids(batch.getDocumentosJson());
-            return comprobanteRepository.findWithClientByIdIn(ids);
-        } catch (Exception exception) {
-            throw new SunatIntegrationException("No se pudieron recuperar los comprobantes del lote.", exception);
-        }
-    }
-
-    private List<UUID> ids(String serialized) {
-        if (serialized == null || !serialized.startsWith("[") || !serialized.endsWith("]")) {
-            throw new IllegalArgumentException("El lote tiene una lista de comprobantes inválida.");
-        }
-        String values = serialized.substring(1, serialized.length() - 1).trim();
-        if (values.isEmpty()) {
-            return List.of();
-        }
-        return java.util.Arrays.stream(values.split(","))
-                .map(value -> UUID.fromString(value.trim().replace("\"", "")))
-                .toList();
+        return switch (batch.getTipoLote()) {
+            case "RESUMEN" -> comprobanteRepository.findWithClientByLoteResumen_IdOrderBySerieAscNumeroAsc(batch.getId());
+            case "BAJA" -> comprobanteRepository.findWithClientByLoteBaja_IdOrderBySerieAscNumeroAsc(batch.getId());
+            default -> throw new SunatIntegrationException("Tipo de lote SUNAT no soportado.");
+        };
     }
 
     private SunatBatch required(UUID id) {
