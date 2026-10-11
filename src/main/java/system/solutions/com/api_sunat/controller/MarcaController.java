@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/marcas")
+@RequestMapping("/marcas")
 @RequiredArgsConstructor
 public class MarcaController {
 

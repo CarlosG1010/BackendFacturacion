@@ -1,0 +1,1014 @@
+{
+  "documento": {
+    "titulo": "Requerimientos funcionales y no funcionales actualizados",
+    "proyecto": "API multi-tenant de facturación electrónica integrada con SUNAT - Perú",
+    "version": "1.0",
+    "fecha_actualizacion": "2026-10-10",
+    "fase": "Desarrollo y pruebas",
+    "ambiente_produccion_autorizado": false,
+    "repositorio_revisado": {
+      "url": "https://github.com/CarlosG1010/BackendFacturacion",
+      "rama": "main",
+      "commit_revisado": "d8249f710913cd90e8cba03454b226a7ecaa3bf1",
+      "mensaje_commit": "feat: aplicacion de seguridad y sus validaciones",
+      "nota": "Estado del código remoto revisado en el commit indicado; este documento local no se publica ni modifica el repositorio remoto."
+    },
+    "proposito": "Consolidar los requerimientos originales y describir las capacidades existentes en el código, sus límites conocidos y el trabajo pendiente. El estado implementado indica que existe código; no implica validación normativa, operativa ni despliegue en producción.",
+    "fuente": "Requerimientos funcionales compartidos por el usuario y estado del código fuente del proyecto.",
+    "estados": {
+      "IMPLEMENTADO": "Existe una implementación identificable en el proyecto. No implica certificación ni validación externa.",
+      "PARCIAL": "Hay implementación, pero faltan alcance, controles, pruebas o validación para considerar el requerimiento completo.",
+      "PENDIENTE": "No se encontró una implementación suficiente en el proyecto revisado.",
+      "PENDIENTE_VALIDACION": "Hay scripts o código preparado, pero aún requiere validación en un ambiente de desarrollo/pruebas apropiado."
+    }
+  },
+  "resumen_del_estado": {
+    "implementado": [
+      "API REST en Java 17 y Spring Boot con persistencia JPA.",
+      "Autenticación HTTP Basic sin estado y autorización por roles.",
+      "Aislamiento lógico de datos por tenant con tenant obtenido del usuario autenticado.",
+      "Gestión operativa de usuarios de empresa, clientes, productos, categorías, marcas y series.",
+      "Flujo de emisión asíncrona de facturas, boletas y notas, generación XML UBL, firma digital, transporte SOAP y procesamiento de CDR.",
+      "Generación bajo demanda de PDF A4 y tickets de 80 mm y 58 mm.",
+      "Resumen diario de boletas y comunicación de baja mediante lotes.",
+      "Soporte de PEN/USD y datos tributarios para gravadas, exoneradas, inafectas y operaciones gratuitas con restricciones implementadas.",
+      "Migraciones Flyway V1 y V2 presentes en el código fuente."
+    ],
+    "validacion_pendiente": [
+      "La migración V2 no se ha ejecutado ni probado contra SQL Server; no modificar ni migrar bases de producción.",
+      "La integración real con SUNAT/OSE, incluyendo respuestas, certificados y credenciales, requiere pruebas controladas en ambiente de desarrollo/beta.",
+      "La validación XSD depende de que los esquemas SUNAT estén instalados en la ruta configurada; no se encontraron archivos XSD en el árbol revisado.",
+      "El esquema SQL Server y las restricciones físicas deben comprobarse en una base de datos de pruebas compatible."
+    ],
+    "pruebas": {
+      "comando": "Maven test con JDK 17",
+      "resultado_reportado": {
+        "pruebas": 19,
+        "fallos": 0,
+        "errores": 0,
+        "omitidas": 0
+      },
+      "alcance": "Incluye pruebas unitarias/de contexto y persistencia de prueba con H2; no demuestra por sí solo la compatibilidad de V2 con SQL Server ni la aceptación de documentos por SUNAT."
+    }
+  },
+  "arquitectura_y_modelo": {
+    "estilo": "API REST por controladores, servicios, repositorios Spring Data JPA, entidades y DTOs; integración SUNAT y PDF en componentes especializados.",
+    "plataforma": {
+      "lenguaje": "Java 17",
+      "framework": "Spring Boot 4.1.1",
+      "persistencia": "JPA/Hibernate y Spring Data JPA",
+      "base_de_datos_objetivo": "Microsoft SQL Server",
+      "base_de_datos_de_pruebas": "H2 en modo compatible con SQL Server",
+      "migraciones": "Flyway; ddl-auto=validate en configuración principal"
+    },
+    "entidades_y_tablas": [
+      {
+        "entidad": "Tenant",
+        "tabla": "tenants",
+        "responsabilidad": "Datos fiscales y de configuración de la empresa: RUC, razón social, nombre comercial, dirección, contacto, régimen, estado, estado/condición SUNAT, logo y ubicación del certificado.",
+        "controles": [
+          "Identificador UUID.",
+          "Campo de versión optimista JPA."
+        ]
+      },
+      {
+        "entidad": "Usuario",
+        "tabla": "usuarios",
+        "responsabilidad": "Identidad, correo, hash de contraseña, rol, estado y tenant opcional para cuentas globales.",
+        "controles": [
+          "Contraseña no incluida en respuestas JSON.",
+          "Tenant no serializado en las respuestas."
+        ]
+      },
+      {
+        "entidad": "Cliente",
+        "tabla": "clientes",
+        "responsabilidad": "Clientes y datos de identificación asociados al tenant.",
+        "controles": [
+          "Unicidad del tipo y número de documento dentro del tenant."
+        ]
+      },
+      {
+        "entidad": "Producto",
+        "tabla": "productos",
+        "responsabilidad": "Catálogo de productos, precio, unidad, stock y referencias a categoría y marca."
+      },
+      {
+        "entidad": "Categoria",
+        "tabla": "categorias",
+        "responsabilidad": "Catálogo de categorías asociado al tenant."
+      },
+      {
+        "entidad": "Marca",
+        "tabla": "marcas",
+        "responsabilidad": "Catálogo de marcas asociado al tenant."
+      },
+      {
+        "entidad": "Comprobante",
+        "tabla": "comprobantes",
+        "responsabilidad": "Cabecera, datos tributarios, importes, trazabilidad SUNAT y referencias a cliente, usuario, comprobante de origen y lotes."
+      },
+      {
+        "entidad": "ComprobanteDetalle",
+        "tabla": "comprobantes_detalle",
+        "responsabilidad": "Líneas de comprobante con tenant, producto, cantidad, precios, IGV y afectación tributaria."
+      },
+      {
+        "entidad": "ControlSeries",
+        "tabla": "control_series",
+        "responsabilidad": "Correlativo por tenant, tipo de comprobante y serie."
+      },
+      {
+        "entidad": "SunatBatch",
+        "tabla": "sunat_lotes",
+        "responsabilidad": "Persistencia del estado de resúmenes diarios y comunicaciones de baja."
+      },
+      {
+        "entidad": "AuditoriaEmpresa",
+        "tabla": "auditoria_empresa",
+        "responsabilidad": "Registro de actividad asociado a una empresa."
+      },
+      {
+        "entidad": "AuditoriaGlobal",
+        "tabla": "auditoria_global",
+        "responsabilidad": "Registro de actividad global y tenant afectado opcional."
+      },
+      {
+        "entidad": "ParametroGlobal",
+        "tabla": "parametros_globales",
+        "responsabilidad": "Modelo de parámetros generales. La API de administración correspondiente requiere completarse/verificarse."
+      }
+    ],
+    "relaciones_y_restricciones_previstas": [
+      "Las entidades de negocio incluyen tenant_id y asociaciones JPA al tenant.",
+      "Los comprobantes se relacionan con cliente, usuario creador, comprobante de origen y lotes de resumen/baja.",
+      "Los detalles se relacionan con comprobante y producto, con referencias que incorporan tenant_id.",
+      "Los productos se relacionan con categoría y marca.",
+      "La serie tiene unicidad compuesta por tenant_id, tipo_comprobante y serie.",
+      "Las FKs e índices compuestos físicos se declaran en la migración V2; siguen pendientes de aplicación y comprobación en SQL Server de pruebas."
+    ]
+  },
+  "requerimientos_funcionales": {
+    "administracion_global": [
+      {
+        "id": "RF-TG-001",
+        "nombre": "Registrar empresas/tenants",
+        "descripcion": "Registrar empresa con datos fiscales, contacto, estado, logo y configuración del certificado digital.",
+        "estado": "PENDIENTE",
+        "evidencia_o_nota": "Existe la entidad Tenant y configuración de almacenamiento de archivos, pero no se encontró un flujo completo de API para alta de tenants."
+      },
+      {
+        "id": "RF-TG-002",
+        "nombre": "Actualizar empresas",
+        "descripcion": "Actualizar de manera autorizada los datos fiscales y de perfil de una empresa.",
+        "estado": "PENDIENTE"
+      },
+      {
+        "id": "RF-TG-003",
+        "nombre": "Consultar y filtrar empresas",
+        "descripcion": "Listar empresas y buscar por RUC, razón social o estado.",
+        "estado": "PENDIENTE"
+      },
+      {
+        "id": "RF-TG-004",
+        "nombre": "Desactivar empresas",
+        "descripcion": "Desactivar empresas sin eliminar su historial transaccional.",
+        "estado": "PENDIENTE"
+      },
+      {
+        "id": "RF-TG-005",
+        "nombre": "Registrar usuarios globales",
+        "descripcion": "Crear usuarios globales con roles permitidos.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "UsuarioServiceImpl valida roles globales; UsuarioController restringe la operación a ADMIN_GLOBAL."
+      },
+      {
+        "id": "RF-TG-006",
+        "nombre": "Actualizar usuarios",
+        "descripcion": "Actualizar datos de usuario respetando alcance global o tenant.",
+        "estado": "PARCIAL",
+        "evidencia_o_nota": "Hay actualización de usuarios y control de pertenencia al tenant; el ciclo completo de administración de Administradores de Empresa no está resuelto."
+      },
+      {
+        "id": "RF-TG-007",
+        "nombre": "Activar o desactivar usuarios",
+        "descripcion": "Cambiar el estado de usuarios permitidos para el actor.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Servicio valida estados ACTIVO/INACTIVO y limita las operaciones de administrador de empresa a usuarios subordinados."
+      },
+      {
+        "id": "RF-TG-008",
+        "nombre": "Consultar usuarios globales",
+        "descripcion": "Listar usuarios globales.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TG-009",
+        "nombre": "Crear Administrador de Empresa",
+        "descripcion": "Provisionar el administrador inicial de cada tenant.",
+        "estado": "PENDIENTE",
+        "evidencia_o_nota": "El alta de usuarios de empresa existente se limita a VENDEDOR y CONTADOR."
+      },
+      {
+        "id": "RF-TG-010",
+        "nombre": "Actualizar Administrador de Empresa",
+        "descripcion": "Actualizar la cuenta administradora de una empresa.",
+        "estado": "PENDIENTE"
+      },
+      {
+        "id": "RF-TG-011",
+        "nombre": "Activar o desactivar Administrador de Empresa",
+        "descripcion": "Administrar el estado de la cuenta administradora de empresa.",
+        "estado": "PENDIENTE"
+      },
+      {
+        "id": "RF-TG-012",
+        "nombre": "Restablecer contraseña",
+        "descripcion": "Implementar un proceso seguro de restablecimiento de credenciales.",
+        "estado": "PENDIENTE"
+      },
+      {
+        "id": "RF-TG-013",
+        "nombre": "Consultar auditoría global",
+        "descripcion": "Consultar actor, rol, tenant, fecha, IP, acción, módulo e identificador afectado.",
+        "estado": "PARCIAL",
+        "evidencia_o_nota": "Existen entidades, servicio y endpoint global protegido; faltan comprobar límites de rango, paginación, DTO de salida y ciclo completo de generación de eventos."
+      },
+      {
+        "id": "RF-TG-014",
+        "nombre": "Configurar parámetros generales",
+        "descripcion": "Administrar parámetros globales de plataforma.",
+        "estado": "PENDIENTE",
+        "evidencia_o_nota": "Existe entidad/repository de parámetros; no se encontró API completa de administración."
+      },
+      {
+        "id": "RF-TG-015",
+        "nombre": "Operaciones del Operador de Sistemas",
+        "descripcion": "Aplicar permisos explícitos para las tareas permitidas y restricciones del rol Operador de Sistemas.",
+        "estado": "PENDIENTE",
+        "evidencia_o_nota": "El rol está modelado, pero los flujos globales de gestión de empresas y delegación de permisos deben completarse y probarse."
+      }
+    ],
+    "operacion_por_empresa": [
+      {
+        "id": "RF-TE-001",
+        "nombre": "Registrar usuarios subordinados",
+        "descripcion": "Permitir que ADMIN_EMPRESA registre usuarios VENDEDOR o CONTADOR en su propio tenant.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-002",
+        "nombre": "Actualizar usuarios del tenant",
+        "descripcion": "Actualizar usuarios subordinados pertenecientes al tenant autenticado.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-003",
+        "nombre": "Cambiar estado de usuarios del tenant",
+        "descripcion": "Activar o desactivar usuarios subordinados del tenant.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-004",
+        "nombre": "Consultar usuarios del tenant",
+        "descripcion": "Listar usuarios de la empresa con comprobación de tenant.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-005",
+        "nombre": "Registrar clientes",
+        "descripcion": "Registrar clientes con tipo y número de documento validados y asignados al tenant autenticado.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-006",
+        "nombre": "Actualizar clientes",
+        "descripcion": "Actualizar datos autorizados de clientes del tenant.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-007",
+        "nombre": "Consultar y filtrar clientes",
+        "descripcion": "Buscar clientes del tenant por nombre, estado o documento.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-008",
+        "nombre": "Desactivar clientes",
+        "descripcion": "Desactivar un cliente sin borrado físico.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-009",
+        "nombre": "Registrar productos",
+        "descripcion": "Registrar productos con código, descripción, unidad, precio, stock y referencias de catálogo validados.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-010",
+        "nombre": "Actualizar productos",
+        "descripcion": "Actualizar datos permitidos de productos existentes en el tenant.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-011",
+        "nombre": "Consultar productos",
+        "descripcion": "Buscar productos por descripción y consultar alertas de stock.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-012",
+        "nombre": "Desactivar productos",
+        "descripcion": "Desactivar productos sin borrado físico.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-013",
+        "nombre": "Gestionar categorías",
+        "descripcion": "Crear, actualizar, buscar y desactivar categorías del tenant.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-014",
+        "nombre": "Gestionar marcas",
+        "descripcion": "Crear, actualizar, buscar y desactivar marcas del tenant.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-015",
+        "nombre": "Configurar series y correlativos",
+        "descripcion": "Gestionar series por tipo de comprobante y tenant, reservando el siguiente número bajo bloqueo dentro de la transacción de emisión.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Existe ControlSeriesServiceImpl con bloqueo pesimista; la migración V2 define unicidad tenant/tipo/serie. La restricción física requiere validarse en SQL Server de pruebas."
+      },
+      {
+        "id": "RF-TE-016",
+        "nombre": "Emitir facturas",
+        "descripcion": "Crear comprobantes tipo 01, asociar cliente, usuario y detalle, reservar correlativo y encolar su envío.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-017",
+        "nombre": "Emitir boletas",
+        "descripcion": "Crear comprobantes tipo 03 y soportar su envío individual o inclusión en resumen diario.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-018",
+        "nombre": "Emitir notas de crédito",
+        "descripcion": "Crear comprobante tipo 07 con origen aceptado, mismo cliente y validaciones de líneas/cantidades.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-019",
+        "nombre": "Emitir notas de débito",
+        "descripcion": "Crear comprobante tipo 08 con origen, motivo y validaciones de negocio.",
+        "estado": "IMPLEMENTADO"
+      },
+      {
+        "id": "RF-TE-020",
+        "nombre": "Consultar comprobantes",
+        "descripcion": "Consultar comprobante y respuesta mediante identificador, con DTO de salida.",
+        "estado": "PARCIAL",
+        "evidencia_o_nota": "Existe consulta por ID; filtros, paginación y alcance de búsqueda general deben completarse o documentarse."
+      },
+      {
+        "id": "RF-TE-021",
+        "nombre": "Generar reportes operativos",
+        "descripcion": "Generar reportes de ventas, productos, clientes, comprobantes y stock.",
+        "estado": "PENDIENTE",
+        "evidencia_o_nota": "No se encontró un conjunto completo de endpoints y DTOs de reportes."
+      },
+      {
+        "id": "RF-TE-022",
+        "nombre": "Consultar auditoría de empresa",
+        "descripcion": "Consultar registros de actividad de la empresa autenticada.",
+        "estado": "PARCIAL",
+        "evidencia_o_nota": "Existe endpoint protegido y servicio; faltan confirmar generación consistente de eventos, paginación y DTOs."
+      }
+    ],
+    "permisos_de_vendedor_y_contador": [
+      {
+        "id": "RF-TE-023",
+        "nombre": "Registrar clientes como vendedor",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "Operaciones de clientes sujetas a autorización y tenant activo."
+      },
+      {
+        "id": "RF-TE-024",
+        "nombre": "Actualizar clientes como vendedor",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "Actualizar únicamente datos permitidos del cliente."
+      },
+      {
+        "id": "RF-TE-025",
+        "nombre": "Consultar clientes como vendedor",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "Consultar clientes dentro del tenant autorizado."
+      },
+      {
+        "id": "RF-TE-026",
+        "nombre": "Emitir facturas como vendedor",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "La autorización de emisión permite tipo 01 a ADMIN_EMPRESA y VENDEDOR."
+      },
+      {
+        "id": "RF-TE-027",
+        "nombre": "Emitir boletas como vendedor",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "La autorización de emisión permite tipo 03 a ADMIN_EMPRESA y VENDEDOR."
+      },
+      {
+        "id": "RF-TE-028",
+        "nombre": "Consultar comprobantes como vendedor",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "Consulta de comprobante, PDF y CDR bajo autorización del tenant."
+      },
+      {
+        "id": "RF-TE-029",
+        "nombre": "Consultar comprobantes como contador",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "Consulta de comprobantes bajo autorización del tenant."
+      },
+      {
+        "id": "RF-TE-030",
+        "nombre": "Emitir notas de crédito como contador",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "La autorización de emisión permite tipo 07 a ADMIN_EMPRESA y CONTADOR."
+      },
+      {
+        "id": "RF-TE-031",
+        "nombre": "Emitir notas de débito como contador",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "La autorización de emisión permite tipo 08 a ADMIN_EMPRESA y CONTADOR."
+      },
+      {
+        "id": "RF-TE-032",
+        "nombre": "Consultar reportes tributarios como contador",
+        "estado": "PENDIENTE",
+        "descripcion": "Falta completar los endpoints y DTOs de reportes tributarios."
+      }
+    ],
+    "matriz_de_permisos": [
+      {
+        "modulo": "Gestión de empresas",
+        "ADMIN_GLOBAL": "PENDIENTE",
+        "OPERADOR_SISTEMAS": "PENDIENTE",
+        "ADMIN_EMPRESA": "NO_PERMITIDO",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "NO_PERMITIDO",
+        "nota": "Los permisos previstos para ADMIN_GLOBAL y OPERADOR_SISTEMAS dependen de completar el módulo de administración de tenants."
+      },
+      {
+        "modulo": "Usuarios globales",
+        "ADMIN_GLOBAL": "IMPLEMENTADO",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "NO_PERMITIDO",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "NO_PERMITIDO"
+      },
+      {
+        "modulo": "Usuarios de empresa",
+        "ADMIN_GLOBAL": "PARCIAL",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "IMPLEMENTADO",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "NO_PERMITIDO",
+        "nota": "El administrador de empresa solo crea y gestiona VENDEDOR/CONTADOR; el ciclo de ADMIN_EMPRESA inicial requiere implementación global."
+      },
+      {
+        "modulo": "Clientes",
+        "ADMIN_GLOBAL": "NO_PERMITIDO",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "IMPLEMENTADO",
+        "VENDEDOR": "IMPLEMENTADO",
+        "CONTADOR": "NO_PERMITIDO"
+      },
+      {
+        "modulo": "Productos, categorías y marcas",
+        "ADMIN_GLOBAL": "NO_PERMITIDO",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "IMPLEMENTADO",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "NO_PERMITIDO"
+      },
+      {
+        "modulo": "Series y correlativos",
+        "ADMIN_GLOBAL": "NO_PERMITIDO",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "IMPLEMENTADO",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "NO_PERMITIDO"
+      },
+      {
+        "modulo": "Facturas y boletas",
+        "ADMIN_GLOBAL": "NO_PERMITIDO",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "IMPLEMENTADO",
+        "VENDEDOR": "IMPLEMENTADO",
+        "CONTADOR": "NO_PERMITIDO"
+      },
+      {
+        "modulo": "Notas de crédito y débito",
+        "ADMIN_GLOBAL": "NO_PERMITIDO",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "IMPLEMENTADO",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "IMPLEMENTADO"
+      },
+      {
+        "modulo": "Auditoría global",
+        "ADMIN_GLOBAL": "PARCIAL",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "NO_PERMITIDO",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "NO_PERMITIDO"
+      },
+      {
+        "modulo": "Auditoría de empresa",
+        "ADMIN_GLOBAL": "NO_PERMITIDO",
+        "OPERADOR_SISTEMAS": "NO_PERMITIDO",
+        "ADMIN_EMPRESA": "PARCIAL",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "NO_PERMITIDO"
+      },
+      {
+        "modulo": "Reportes",
+        "ADMIN_GLOBAL": "PENDIENTE",
+        "OPERADOR_SISTEMAS": "PENDIENTE",
+        "ADMIN_EMPRESA": "PENDIENTE",
+        "VENDEDOR": "NO_PERMITIDO",
+        "CONTADOR": "PENDIENTE"
+      }
+    ],
+    "perfil_de_empresa": [
+      {
+        "id": "RF-EMP-001",
+        "nombre": "Consultar perfil del tenant autenticado",
+        "descripcion": "Exponer datos fiscales y de perfil de la empresa autenticada mediante DTO, sin aceptar un tenant arbitrario en la ruta.",
+        "estado": "IMPLEMENTADO",
+        "endpoint": "GET /empresa/mi-perfil (bajo el context-path /api)",
+        "evidencia_o_nota": "Endpoint protegido por roles de empresa; respuesta con Cache-Control no-store."
+      },
+      {
+        "id": "RF-EMP-002",
+        "nombre": "Servir logo del tenant",
+        "descripcion": "Entregar el logo del tenant autenticado como recurso con tipo MIME de imagen y restringiendo la ruta al directorio configurado.",
+        "estado": "IMPLEMENTADO",
+        "endpoint": "GET /empresa/mi-perfil/logo (bajo el context-path /api)"
+      },
+      {
+        "id": "RF-EMP-003",
+        "nombre": "Administrar perfil, logo y datos fiscales",
+        "descripcion": "Permitir edición autorizada de datos fiscales y carga segura de logo/certificado.",
+        "estado": "PENDIENTE",
+        "evidencia_o_nota": "Existe consulta de perfil y carga dinámica de logo para PDF; no se encontró un flujo completo de administración/carga en la API."
+      }
+    ],
+    "emision_y_sunat": [
+      {
+        "id": "RF-SUNAT-001",
+        "nombre": "Construir XML UBL 2.1",
+        "descripcion": "Generar XML para factura, boleta y notas con los datos del tenant, cliente, moneda, impuestos, detalle y referencias.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Existen generadores de XML para comprobantes y lotes. La cobertura normativa debe contrastarse con catálogos y XSD oficiales vigentes."
+      },
+      {
+        "id": "RF-SUNAT-002",
+        "nombre": "Validar XML contra esquemas SUNAT",
+        "descripcion": "Validar cada documento contra XSD oficiales locales antes del envío, evitando acceso a esquemas externos no autorizados.",
+        "estado": "PARCIAL",
+        "evidencia_o_nota": "Existe UblSchemaValidator con ruta configurable; no se encontraron archivos XSD incluidos en el proyecto, por lo que debe instalarse y verificarse el paquete normativo."
+      },
+      {
+        "id": "RF-SUNAT-003",
+        "nombre": "Firmar XML por tenant",
+        "descripcion": "Firmar el documento con certificado PKCS12 asociado al tenant y almacenar la trazabilidad de la firma.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Existe firmador XMLDSig y restricción de lectura del archivo al directorio autorizado. Las contraseñas del certificado se configuran por propiedades del tenant."
+      },
+      {
+        "id": "RF-SUNAT-004",
+        "nombre": "Enviar comprobantes por SOAP",
+        "descripcion": "Empaquetar XML firmado y consumir el servicio billService configurado para BETA o PRODUCCION.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Hay cliente SOAP con endpoint por configuración y límites de conexión/respuesta. La prueba efectiva debe hacerse solo en BETA/desarrollo."
+      },
+      {
+        "id": "RF-SUNAT-005",
+        "nombre": "Procesar CDR y respuesta SUNAT",
+        "descripcion": "Extraer estado, código, mensaje, observaciones, ticket/CDR y persistir los resultados.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Existen procesador CDR, almacenamiento de documentos y campos de trazabilidad. Pendiente validación con respuestas reales de BETA."
+      },
+      {
+        "id": "RF-SUNAT-006",
+        "nombre": "Envío asíncrono y reintento de pendientes",
+        "descripcion": "Encolar envío después del commit y despachar pendientes por tenant con pool acotado.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Se usan eventos transaccionales, ejecutor de tamaño y cola acotados y schedulers de pendientes."
+      },
+      {
+        "id": "RF-SUNAT-007",
+        "nombre": "Generar resumen diario de boletas",
+        "descripcion": "Agrupar boletas elegibles por fecha y tenant, generar XML y enviar mediante sendSummary.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Existe servicio de lote, persistencia relacional y generador XML; falta probar el flujo contra SUNAT BETA."
+      },
+      {
+        "id": "RF-SUNAT-008",
+        "nombre": "Consultar ticket de resumen o baja",
+        "descripcion": "Consultar getStatus de forma asíncrona y almacenar resultado/ticket.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Hay scheduler y worker de lotes; pruebas reales de integración siguen pendientes."
+      },
+      {
+        "id": "RF-SUNAT-009",
+        "nombre": "Solicitar comunicación de baja",
+        "descripcion": "Validar comprobantes, tenant, estados, fecha, plazo y motivo antes de preparar y enviar el lote de baja.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "El servicio limita tamaño, ids duplicados/nulos, tipos permitidos, fecha y estados. El plazo depende de configuración y debe contrastarse con normativa aplicable."
+      },
+      {
+        "id": "RF-SUNAT-010",
+        "nombre": "Soportar catálogos tributarios y monedas",
+        "descripcion": "Soportar afectaciones IGV gravadas, exoneradas e inafectas, operaciones gratuitas, PEN y USD con tipo de cambio.",
+        "estado": "PARCIAL",
+        "evidencia_o_nota": "El servicio calcula códigos 10/20/30 y operaciones gratuitas con restricciones; la validación actual de gratuidad permite el caso gravado. La revisión completa de catálogos/casos gratuitos y validación normativa queda pendiente."
+      }
+    ],
+    "representacion_impresa": [
+      {
+        "id": "RF-PDF-001",
+        "nombre": "Generar PDF A4",
+        "descripcion": "Crear representación formal con datos de empresa/cliente, líneas, impuestos e importes.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Generación bajo demanda usando OpenPDF."
+      },
+      {
+        "id": "RF-PDF-002",
+        "nombre": "Generar tickets térmicos",
+        "descripcion": "Generar PDF para impresoras de 80 mm y 58 mm con distribución vertical compacta.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "PrintFormat contiene A4, TICKET_80MM y TICKET_58MM."
+      },
+      {
+        "id": "RF-PDF-003",
+        "nombre": "Incluir QR SUNAT",
+        "descripcion": "Crear QR con los campos del emisor, documento, serie/número, impuestos, total, fecha, cliente y hash.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Generación de QR mediante ZXing."
+      },
+      {
+        "id": "RF-PDF-004",
+        "nombre": "Incluir hash, monto en letras y leyendas",
+        "descripcion": "Mostrar hash de firma, importe en letras y leyendas/observaciones disponibles del comprobante.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "Incluido en el generador de representación impresa; verificar textos finales contra normativa y tipo documental vigente."
+      },
+      {
+        "id": "RF-PDF-005",
+        "nombre": "Usar logo por tenant",
+        "descripcion": "Cargar el logo configurado para la empresa autenticada sin permitir acceso a archivos fuera del directorio.",
+        "estado": "IMPLEMENTADO",
+        "evidencia_o_nota": "El perfil y el servicio PDF usan el logo dinámico del tenant."
+      },
+      {
+        "id": "RF-PDF-006",
+        "nombre": "Descargar PDF bajo demanda",
+        "descripcion": "Exponer PDF por identificador/formato con control de acceso y respuesta ligera.",
+        "estado": "IMPLEMENTADO",
+        "endpoint": "GET /comprobantes/{id}/pdf?formato=A4|TICKET_80MM|TICKET_58MM (bajo context-path /api)"
+      },
+      {
+        "id": "RF-PDF-007",
+        "nombre": "Cachear PDF",
+        "descripcion": "Evaluar almacenamiento o caché para reducir carga en solicitudes repetidas.",
+        "estado": "PENDIENTE",
+        "evidencia_o_nota": "La generación es bajo demanda y la respuesta usa no-store; no se implementó caché de PDF."
+      }
+    ],
+    "comunicaciones_y_auditoria": [
+      {
+        "id": "RF-AUD-001",
+        "nombre": "Consultar auditoría de empresa",
+        "estado": "PARCIAL",
+        "descripcion": "Endpoint y servicio de consulta existentes; validar registro completo de eventos, paginación y límites de búsqueda."
+      },
+      {
+        "id": "RF-AUD-002",
+        "nombre": "Consultar auditoría global",
+        "estado": "PARCIAL",
+        "descripcion": "Endpoint y servicio de consulta global existentes; validar el ciclo de captura, privilegios, DTO y límites de consulta."
+      },
+      {
+        "id": "RF-API-001",
+        "nombre": "Normalizar rutas REST",
+        "estado": "IMPLEMENTADO",
+        "descripcion": "Alinear los prefijos de los controladores con el context-path configurado para que todos los endpoints REST tengan una convención uniforme.",
+        "evidencia_o_nota": "Problema detectado en el commit remoto d8249f7 y corregido localmente: server.servlet.context-path=/api se combina con mappings de controlador sin prefijo /api. Las rutas finales usan un solo /api (por ejemplo, /api/usuarios, /api/clientes, /api/marcas y /api/auditorias). ApiRouteMappingTest protege los mappings. El cambio local aún debe revisarse y subirse por el usuario; no se publicó al repositorio."
+      }
+    ]
+  },
+  "requerimientos_no_funcionales": [
+    {
+      "id": "RNF-001",
+      "nombre": "Aislamiento multi-tenant",
+      "descripcion": "Todo acceso de empresa a datos de negocio debe restringirse al tenant autenticado; una cabecera de tenant no debe cambiar la identidad autorizada.",
+      "estado": "IMPLEMENTADO",
+      "controles": [
+        "TenantContext derivado del principal autenticado.",
+        "X-Tenant-ID se trata como verificación opcional, no como fuente de autoridad.",
+        "El interceptor rechaza UUID malformado y cabeceras duplicadas, y limpia el ThreadLocal por solicitud.",
+        "Hibernate utiliza TenantResolver y entidades tenant-aware.",
+        "Hay pruebas de rechazo de tenant ajeno, duplicación de cabecera y limpieza de contexto."
+      ],
+      "pendiente": "Probar referencias cruzadas contra FKs compuestas efectivas en SQL Server de pruebas."
+    },
+    {
+      "id": "RNF-002",
+      "nombre": "Integridad referencial física",
+      "descripcion": "Las tablas transaccionales deben relacionarse por tenant y no permitir referencias a registros de otras empresas.",
+      "estado": "PENDIENTE_VALIDACION",
+      "controles": [
+        "Entidades JPA con asociaciones a Tenant y asociaciones de comprobante/detalle/lote.",
+        "V2 agrega FKs e índices únicos compuestos y migra referencias de lotes."
+      ],
+      "pendiente": "Ejecutar V1/V2 exclusivamente sobre una copia/base de desarrollo y revisar datos, constraints y compatibilidad SQL Server."
+    },
+    {
+      "id": "RNF-003",
+      "nombre": "Prevención de inyección SQL",
+      "descripcion": "Usar consultas derivadas de Spring Data o JPQL parametrizado; no concatenar entrada en SQL.",
+      "estado": "IMPLEMENTADO",
+      "evidencia_o_nota": "Las consultas personalizadas revisadas son JPQL parametrizado; no se encontró nativeQuery ni SQL concatenado en el código Java inspeccionado."
+    },
+    {
+      "id": "RNF-004",
+      "nombre": "Validación de entrada",
+      "descripcion": "Limitar tamaño, formato, rangos y valores de solicitudes y filtros.",
+      "estado": "PARCIAL",
+      "controles": [
+        "Utilitario común para normalizar, limitar longitudes y rechazar caracteres de control.",
+        "Validaciones específicas para documento de cliente, producto, importe, stock, moneda, tipo de cambio, detalles, serie, usuario y lotes.",
+        "Pruebas unitarias del utilitario de validación."
+      ],
+      "pendiente": "Migrar todas las entradas a DTOs con Bean Validation y completar validación/normalización en cada endpoint."
+    },
+    {
+      "id": "RNF-005",
+      "nombre": "Prevención de IDOR",
+      "descripcion": "Impedir acceso a usuarios, comprobantes, documentos y archivos de otro tenant.",
+      "estado": "PARCIAL",
+      "controles": [
+        "Resolución de tenant por principal y autorización de pertenencia para operaciones de usuario.",
+        "Consultas de negocio sujetas al tenant actual y FKs compuestas propuestas."
+      ],
+      "pendiente": "Añadir pruebas de integración que accedan con IDs ajenos para cada recurso protegido, incluyendo PDF, XML/CDR y lotes."
+    },
+    {
+      "id": "RNF-006",
+      "nombre": "Autenticación y autorización",
+      "descripcion": "Exigir identidad autenticada y aplicar autorización por rol en rutas sensibles.",
+      "estado": "IMPLEMENTADO",
+      "controles": [
+        "HTTP Basic.",
+        "Sesión STATELESS.",
+        "Contraseñas almacenadas con BCrypt.",
+        "Roles ADMIN_GLOBAL, OPERADOR_SISTEMAS, ADMIN_EMPRESA, VENDEDOR y CONTADOR.",
+        "Reglas de emisión diferencian facturas/boletas de notas."
+      ],
+      "pendiente": "Evaluar MFA, limitación de intentos, rotación de credenciales y controles adicionales de acceso."
+    },
+    {
+      "id": "RNF-007",
+      "nombre": "Protección de datos sensibles",
+      "descripcion": "No exponer hashes de contraseña, rutas o credenciales SUNAT/certificados en respuestas o registros.",
+      "estado": "PARCIAL",
+      "controles": [
+        "Password hash con acceso JSON de solo escritura.",
+        "Tenant excluido de la serialización en relaciones.",
+        "Rutas de certificado write-only y campos sensibles excluidos de toString.",
+        "Contraseña de base de datos externalizada mediante DB_PASSWORD.",
+        "Documentación OpenAPI deshabilitada por defecto."
+      ],
+      "pendiente": "Usar un gestor de secretos en despliegue, cifrar secretos SUNAT/certificados en reposo, revisar DTOs en todos los endpoints y auditar logs."
+    },
+    {
+      "id": "RNF-008",
+      "nombre": "Seguridad XML y XXE",
+      "descripcion": "Deshabilitar entidades externas y DTD, restringir acceso de validadores a esquemas externos.",
+      "estado": "IMPLEMENTADO",
+      "evidencia_o_nota": "Los parsers XML revisados activan procesamiento seguro y restringen DTD/recursos externos. La distribución de XSD locales oficiales aún debe completarse."
+    },
+    {
+      "id": "RNF-009",
+      "nombre": "Consistencia transaccional y concurrencia",
+      "descripcion": "Evitar correlativos duplicados y persistencia parcial de emisión/lotes.",
+      "estado": "IMPLEMENTADO",
+      "controles": [
+        "Bloqueo pesimista de fila de serie dentro de la transacción de emisión.",
+        "Evento de envío publicado después del commit.",
+        "Campo @Version en Tenant y restricción única de lotes/series propuesta en migración."
+      ],
+      "pendiente": "Pruebas concurrentes de alta carga y validación de restricciones en SQL Server de pruebas."
+    },
+    {
+      "id": "RNF-010",
+      "nombre": "Rendimiento y eficiencia",
+      "descripcion": "Mantener operaciones de lectura acotadas, evitar serializar entidades pesadas y aislar tareas costosas.",
+      "estado": "PARCIAL",
+      "controles": [
+        "Envío SUNAT asíncrono con pool y cola acotados.",
+        "DTO para respuesta de comprobante y perfil de empresa.",
+        "Recuperación agrupada de productos/detalles en emisión y consultas parametrizadas.",
+        "PDF generado bajo demanda."
+      ],
+      "pendiente": "Completar DTOs en todas las respuestas, proyecciones/paginación, medición de N+1 y pruebas de carga; no existe caché PDF."
+    },
+    {
+      "id": "RNF-011",
+      "nombre": "Manejo de errores",
+      "descripcion": "Responder con errores controlados sin filtrar detalles internos.",
+      "estado": "PARCIAL",
+      "controles": [
+        "Manejador global para argumentos inválidos, conflictos, errores de lectura JSON e integración SUNAT.",
+        "Errores de unicidad se traducen a conflicto sin exponer detalles de base."
+      ],
+      "pendiente": "Completar taxonomía de errores, trazabilidad con correlation ID y respuestas consistentes para todos los errores."
+    },
+    {
+      "id": "RNF-012",
+      "nombre": "Migraciones versionadas",
+      "descripcion": "Mantener cambios de esquema reproducibles y evitar ddl-auto=create-drop/update en configuración principal.",
+      "estado": "PENDIENTE_VALIDACION",
+      "controles": [
+        "Flyway habilitado.",
+        "V1 y V2 presentes.",
+        "Hibernate configurado con ddl-auto=validate."
+      ],
+      "pendiente": "Validar migración completa sobre SQL Server de desarrollo, incluyendo datos preexistentes, índices y restricciones."
+    },
+    {
+      "id": "RNF-013",
+      "nombre": "Pruebas automatizadas",
+      "descripcion": "Ejecutar pruebas de unidad y contexto antes de aceptar cambios.",
+      "estado": "PARCIAL",
+      "evidencia_o_nota": "19 pruebas pasaron en la ejecución registrada usando Java 17 y H2.",
+      "pendiente": "Añadir pruebas de integración SQL Server, constraints multi-tenant, IDs cruzados, carga concurrente, respuestas SUNAT BETA y casos negativos."
+    },
+    {
+      "id": "RNF-014",
+      "nombre": "Cumplimiento de seguridad organizacional",
+      "descripcion": "Alinear la operación con un programa de gestión de seguridad y protección de datos.",
+      "estado": "PENDIENTE",
+      "evidencia_o_nota": "Los cambios técnicos no constituyen certificación ISO/IEC 27001 ni ISO/IEC 27018, ni acreditan cumplimiento organizacional."
+    },
+    {
+      "id": "RNF-015",
+      "nombre": "Disponibilidad, recuperación y monitoreo",
+      "descripcion": "Definir alertas, métricas, backups, restauración, retención y recuperación de documentos fiscales.",
+      "estado": "PENDIENTE",
+      "evidencia_o_nota": "No se ha verificado una estrategia operacional completa de observabilidad, backup/restore, retención y respuesta ante incidentes."
+    }
+  ],
+  "seguridad_y_privacidad": {
+    "amenazas_consideradas": [
+      {
+        "referencia": "MITRE ATT&CK T1078",
+        "mitigacion_en_codigo": "Autenticación HTTP Basic, autorización por rol y tenant asociado al principal; validación de X-Tenant-ID.",
+        "estado": "PARCIAL",
+        "pendiente": "Protecciones contra abuso de credenciales, rate limiting, MFA y pruebas de IDOR integrales."
+      },
+      {
+        "referencia": "MITRE ATT&CK T1190",
+        "mitigacion_en_codigo": "Validaciones de payload, límites de tamaño/longitud, parser XML con protecciones XXE y validador XSD local.",
+        "estado": "PARCIAL",
+        "pendiente": "Completar XSD oficiales, límites globales HTTP, pruebas fuzzing y escaneo de dependencias."
+      },
+      {
+        "referencia": "MITRE ATT&CK T1565",
+        "mitigacion_en_codigo": "Transacciones de emisión, bloqueo pesimista de series, asociaciones tenant y restricciones de integridad propuestas.",
+        "estado": "PARCIAL",
+        "pendiente": "Aplicar y probar FKs/índices en SQL Server de desarrollo; pruebas de concurrencia y auditoría."
+      }
+    ],
+    "limites_de_cumplimiento": [
+      "No se declara certificación ISO/IEC 27001 o 27018.",
+      "No se declara que todas las técnicas MITRE ATT&CK estén mitigadas.",
+      "HTTP Basic requiere transporte HTTPS en cualquier ambiente compartido; no se certificó la configuración TLS del despliegue.",
+      "Las credenciales y certificados por tenant requieren gestión segura externa al código y protección operacional."
+    ]
+  },
+  "pendientes_priorizados_para_desarrollo_y_pruebas": [
+    {
+      "prioridad": 1,
+      "tarea": "Validar Flyway V1/V2 en una copia de la base SQL Server de desarrollo.",
+      "criterios": [
+        "Comprobar versión de SQL Server compatible con OPENJSON.",
+        "Verificar datos preexistentes, nulabilidad y duplicados.",
+        "Aplicar migraciones en entorno de pruebas únicamente.",
+        "Verificar FKs, índices únicos, lote_resumen_id/lote_baja_id y eliminación de documentos_json."
+      ]
+    },
+    {
+      "prioridad": 2,
+      "tarea": "Cerrar pruebas de aislamiento y autorización multi-tenant.",
+      "criterios": [
+        "Probar IDs de otro tenant para productos, clientes, comprobantes, usuarios, PDF, CDR y lotes.",
+        "Probar cabeceras duplicadas, inválidas y tenant discordante.",
+        "Validar integridad física con intentos controlados de insertar relaciones cruzadas."
+      ]
+    },
+    {
+      "prioridad": 3,
+      "tarea": "Completar operaciones de administración global.",
+      "criterios": [
+        "CRUD de tenant con autorización de ADMIN_GLOBAL/OPERADOR según matriz.",
+        "Provisionamiento de ADMIN_EMPRESA.",
+        "Restablecimiento seguro de contraseña.",
+        "Administración de parámetros globales."
+      ]
+    },
+    {
+      "prioridad": 4,
+      "tarea": "Completar validación SUNAT y catálogos.",
+      "criterios": [
+        "Incluir XSD oficiales aplicables en repositorio/configuración de pruebas y validar documentos de cada tipo.",
+        "Verificar catálogos, motivos de nota, gratuidad, moneda y tipo de cambio.",
+        "Ejecutar pruebas controladas con SUNAT BETA y guardar fixtures anonimizados."
+      ]
+    },
+    {
+      "prioridad": 5,
+      "tarea": "Completar API de reportes, búsquedas y paginación.",
+      "criterios": [
+        "Reportes de ventas, productos, clientes, comprobantes, stock y tributarios.",
+        "Filtros acotados, orden seguro y paginación.",
+        "DTOs de respuesta para evitar serialización directa de entidades."
+      ]
+    },
+    {
+      "prioridad": 6,
+      "tarea": "Fortalecer controles operacionales de seguridad.",
+      "criterios": [
+        "Gestor de secretos para base de datos, SUNAT y certificados.",
+        "Rate limiting, política de intentos y revisión de autenticación.",
+        "HTTPS, observabilidad segura, correlation ID y revisión de logs.",
+        "Pruebas de carga, análisis de dependencias y proceso de backup/restore."
+      ]
+    },
+    {
+      "prioridad": 7,
+      "tarea": "Completar pruebas del contrato HTTP.",
+      "criterios": [
+        "Probar con solicitudes HTTP locales que las rutas finales incluyan exactamente un prefijo /api.",
+        "Publicar y verificar contrato OpenAPI únicamente en ambientes autorizados.",
+        "Añadir pruebas HTTP de estados, autorización y respuestas de error."
+      ]
+    }
+  ],
+  "restricciones_de_ambiente": {
+    "fase_actual": "Desarrollo y pruebas",
+    "produccion": "Fuera de alcance para esta fase; no ejecutar migraciones ni despliegues en producción.",
+    "base_local": "La configuración principal apunta a SQL Server local y requiere DB_PASSWORD.",
+    "sunat": "Usar exclusivamente BETA/desarrollo para pruebas de integración hasta autorización expresa para otra fase.",
+    "migraciones": "No aplicar V1/V2 sobre una base compartida o productiva; probar primero sobre copia local desechable o restaurable."
+  },
+  "componentes_principales": {
+    "repositorio_publico_revisado": "https://github.com/CarlosG1010/BackendFacturacion/tree/d8249f710913cd90e8cba03454b226a7ecaa3bf1",
+    "multi_tenant_y_seguridad": [
+      "src/main/java/system/solutions/com/api_sunat/config/TenantContext.java",
+      "src/main/java/system/solutions/com/api_sunat/config/TenantInterceptor.java",
+      "src/main/java/system/solutions/com/api_sunat/config/TenantResolver.java",
+      "src/main/java/system/solutions/com/api_sunat/security/SecurityConfig.java",
+      "src/main/java/system/solutions/com/api_sunat/security/ComprobanteAuthorization.java",
+      "src/main/java/system/solutions/com/api_sunat/util/RequestInput.java"
+    ],
+    "emision_y_sunat": [
+      "src/main/java/system/solutions/com/api_sunat/implement/ComprobanteServiceImpl.java",
+      "src/main/java/system/solutions/com/api_sunat/implement/ControlSeriesServiceImpl.java",
+      "src/main/java/system/solutions/com/api_sunat/sunat/UblXmlGenerator.java",
+      "src/main/java/system/solutions/com/api_sunat/sunat/UblSchemaValidator.java",
+      "src/main/java/system/solutions/com/api_sunat/sunat/XmlDigitalSigner.java",
+      "src/main/java/system/solutions/com/api_sunat/sunat/SunatSoapClient.java",
+      "src/main/java/system/solutions/com/api_sunat/sunat/SunatCdrProcessor.java",
+      "src/main/java/system/solutions/com/api_sunat/sunat/SunatBatchService.java",
+      "src/main/java/system/solutions/com/api_sunat/sunat/SunatBatchXmlGenerator.java"
+    ],
+    "pdf_y_perfil": [
+      "src/main/java/system/solutions/com/api_sunat/pdf/PdfGeneratorService.java",
+      "src/main/java/system/solutions/com/api_sunat/pdf/QrCodeGenerator.java",
+      "src/main/java/system/solutions/com/api_sunat/pdf/SpanishAmountWords.java",
+      "src/main/java/system/solutions/com/api_sunat/service/ComprobantePdfService.java",
+      "src/main/java/system/solutions/com/api_sunat/service/EmpresaPerfilService.java",
+      "src/main/java/system/solutions/com/api_sunat/controller/EmpresaController.java"
+    ],
+    "migraciones_y_pruebas": [
+      "src/main/resources/db/migration/V1__tenant_sunat_features.sql",
+      "src/main/resources/db/migration/V2__enforce_tenant_referential_integrity.sql",
+      "src/test/java/system/solutions/com/api_sunat/config/TenantInterceptorTest.java",
+      "src/test/java/system/solutions/com/api_sunat/util/RequestInputTest.java"
+    ]
+  }
+}
